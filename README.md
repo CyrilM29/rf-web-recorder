@@ -30,6 +30,10 @@ rf-web-recorder emits `Click` / `Fill Text` / `Get Text` lines you can paste
 into a `.robot` file unchanged — or export directly as a runnable suite, or as
 a **resource-first pair** where locators live in a `.resource` file and the
 test reads like business language (the pattern RF teams actually maintain).
+It also keeps the good parts of the Selenium IDE workflow — in-panel replay,
+in-place step editing, multiple test cases per session, re-import of an
+exported suite — without adopting its control-flow recording (see the
+deliberate non-goals below).
 
 ## Quickstart
 
@@ -111,6 +115,33 @@ on the same field keep only the final value, consecutive load-waits collapse.
 Steps survive page reloads (sessionStorage), are reorderable (↑ ↓) and
 deletable (✕) in the panel, and the test name is editable.
 
+**In-panel replay** (`play` button): the recorded steps replay sequentially
+(~350 ms apart) against the live page — clicks dispatch real
+mousedown/mouseup/click events, fills set the value and dispatch input+change,
+selects pick the option by label, presses land on the focused element, and the
+recorded **assertions are evaluated in place** (visible / text / value /
+count). Each step's element is highlighted as it runs and the current row is
+marked in the panel; a failure stops the replay, marks the row red and names
+the reason in the hint line; success shows `replay OK (N steps)`. `Esc`
+cancels a running replay. Replay never records its own synthetic events.
+Honest caveat: values are set directly on the DOM — frameworks that only
+trust native user gestures (e.g. React controlled inputs) may ignore them;
+the exported suite replays through the real Browser library either way.
+
+**In-place editing**: double-click any step row to edit it inline — the value
+for value-bearing steps (fill / select / assertions), otherwise the key
+(press), the scenario name (markers) or the locator. Enter commits, Escape
+cancels. Editing a locator by hand clears its recorded strategy chip and CSS
+fallback (they no longer describe the new locator).
+
+**Multiple test cases per session** (`+test` button): name the next scenario
+in the inline prompt and keep recording — a scenario marker row
+(`— Test: name —`) is appended, and every export splits the recording into
+multiple `*** Test Cases ***` entries: the first test carries the editable
+test name and the `New Browser`/`New Page` bootstrap, each marker names the
+next test, and later tests **continue the same browser session** (no
+re-bootstrap). Replay treats markers as separators.
+
 **Assertion menu**: while recording, **right-click** any element:
 
 | Menu item | Emitted keyword |
@@ -129,7 +160,8 @@ suppressed while record mode is on.
 |---|---|
 | `Alt+Shift+U` | Toggle recording (extension; injects the recorder if needed) |
 | Right-click | Assertion menu (record mode only) |
-| `Esc` | Close the assertion menu, else stop the recorder (steps kept) |
+| Double-click a step row | Edit the step inline (Enter commits, Escape cancels) |
+| `Esc` | Cancel a running replay, else close the assertion menu, else stop the recorder (steps kept) |
 
 ## Export formats
 
@@ -143,7 +175,28 @@ the first):
 2. **Resource-first pair (Browser)** — `recorded_keywords.resource` (each
    distinct locator becomes a `${LOC_<N>_<SLUG>}` variable + small action
    keywords like `Fill Username`) and a `.robot` suite that calls **only those
-   keywords**: locators never appear in the test.
+   keywords**: locators never appear in the test. When a step's recorded
+   CSS-path fallback differs from its winning locator, the resource also gets
+   a `${LOC_<N>_<SLUG>_FALLBACK}` variable and the keyword body becomes
+   self-healing Robot Framework control flow:
+
+   ```robotframework
+   Click Username
+       ${found}=    Get Element Count    ${LOC_1_USERNAME}
+       IF    ${found} > 0
+           Click    ${LOC_1_USERNAME}
+       ELSE
+           Log    Primary locator not found - falling back to the recorded CSS path    WARN
+           Click    ${LOC_1_USERNAME_FALLBACK}
+       END
+   ```
+
+   The primary locator is tried first; the CSS path only steps in when it no
+   longer matches, and the WARN makes the drift visible in the log instead of
+   hiding it. Value-carrying keywords keep their `[Arguments]` and use the
+   argument in both branches. (The SeleniumLibrary emitter is deliberately
+   unchanged: it already consumes the CSS fallback directly for `role=`/`text=`
+   locators, so an IF/ELSE would just retry the same selector.)
 3. **Full `.robot` suite (SeleniumLibrary)** — same recording, emitted as
    SeleniumLibrary keywords (`Click Element`, `Input Text`,
    `Select From List By Label`, `Element Text Should Be`,
@@ -153,6 +206,14 @@ the first):
    SeleniumLibrary flavour.
 5. **Plain step body** — clipboard only (Browser keywords), for pasting into an
    existing test.
+
+The same menu also offers **Import .robot…**: pick a previously exported
+Browser-library suite and it is parsed back into the step list (replacing the
+current steps), including its test-case names — multiple test cases become
+scenario markers, the first one restores the test name, `New Page` restores
+the start URL. Lines the parser does not understand (resource keyword calls,
+`[Tags]`, `Log`…) are counted in the hint as skipped — never silently
+dropped. Export → import → export round-trips the supported step set.
 
 ### SeleniumLibrary locator translation
 
@@ -187,8 +248,9 @@ Layout:
 | `src/core/steps.js` | Step model + dedup/compaction rules. Pure. |
 | `src/core/emit_browser.js` | Step → Browser-library keyword lines; suite builder; resource-first builder. Pure. |
 | `src/core/emit_selenium.js` | Second emission adapter: step → SeleniumLibrary keyword lines, with Browser→Selenium locator translation (CSS fallback per step). Pure. |
-| `src/panel/panel.js` | Floating draggable panel, overlay, floating menu. Browser-only. |
-| `src/recorder.js` | Event wiring: capture/record modes, assertion menu, persistence, export. |
+| `src/core/resolve.js` | The inverse of locator generation: selector → element(s) (`resolveSelector`/`countSelector`), replay planning (`planStep`) and in-place assertion evaluation (`evalAssertion`). Pure, duck-typed. |
+| `src/panel/panel.js` | Floating draggable panel, overlay, floating menu, inline editors, replay row status. Browser-only. |
+| `src/recorder.js` | Event wiring: capture/record modes, in-panel replay, assertion menu, persistence, export + .robot import. |
 | `src/main.js` | `window.__RFREC` bootstrap (start/stop/export API). |
 | `extension/` | MV3 extension (`recorder.js` there is generated by the build). |
 | `test/` | `node --test` suites for the pure core + build outputs. |
@@ -197,6 +259,15 @@ The `core/` modules never require a real DOM: they accept any object with
 `tagName` / `getAttribute()` / `textContent` / `parentElement` / `children`…
 That is what makes them unit-testable with tiny fake nodes — the real DOM
 just happens to satisfy the same interface at runtime.
+
+## Deliberate non-goals
+
+- **No control-flow recording** (no if/else, loops or variables captured from
+  the UI, unlike Selenium IDE): logic belongs in Robot Framework — resource
+  keywords, templates, `IF`/`FOR` written where they can be reviewed and
+  maintained — not inside a recording. A recording is a linear draft; the
+  only control flow the recorder ever emits is the locator-fallback pattern
+  above, and it generates it, it does not record it.
 
 ## Known limitations
 

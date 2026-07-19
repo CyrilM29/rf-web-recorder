@@ -20,6 +20,8 @@ test("build() writes both bundles with the expected markers", () => {
     "__RFREC_CORE",            // internal namespace
     "ariaRole",                // locator core made it in
     "buildResourcePair",       // emitter made it in
+    "parseSuite",              // .robot re-import made it in
+    "resolveSelector",         // replay resolver made it in
     "createPanel",             // panel made it in
     "rf-web-recorder v" + result.version,
   ]) {
@@ -32,7 +34,7 @@ test("build() writes both bundles with the expected markers", () => {
 test("extension manifest is valid MV3 JSON with the expected surface", () => {
   const manifest = JSON.parse(readFileSync(path.join(ROOT, "extension", "manifest.json"), "utf8"));
   assert.equal(manifest.manifest_version, 3);
-  assert.equal(manifest.version, "0.2.0");
+  assert.equal(manifest.version, "0.3.0");
   assert.ok(manifest.permissions.includes("scripting"));
   assert.ok(manifest.permissions.includes("activeTab"));
   assert.equal(manifest.background.service_worker, "background.js");

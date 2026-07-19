@@ -109,3 +109,179 @@ test("buildResourcePair: repeated (action, locator) pairs reuse one keyword", ()
   assert.equal((resource.match(/^Click Next$/gm) || []).length, 1);
   assert.equal((suite.match(/^    Click Next$/gm) || []).length, 2);
 });
+
+// ---- scenario markers (multi-test sessions) --------------------------------
+test("emitStep: test marker becomes a comment line (body pastes)", () => {
+  assert.deepEqual(emit.emitStep({ type: "test", name: "Checkout" }),
+    ["# --- Test: Checkout ---"]);
+});
+test("buildSuite: markers split into multiple test cases, bootstrap only once", () => {
+  const text = buildSuite({
+    testName: "Login",
+    url: "https://app.example/",
+    steps: [
+      { type: "click", locator: "id=go" },
+      { type: "test", name: "Search Works" },
+      { type: "fill", locator: "id=q", value: "robot" },
+    ],
+  });
+  const lines = text.split("\n");
+  assert.equal(lines[4], "Login");
+  assert.equal(lines[5], "    New Browser    chromium    headless=False");
+  assert.equal(lines[7], "    Click    id=go");
+  assert.equal(lines[8], "Search Works");
+  assert.equal(lines[9], "    Fill Text    id=q    robot");
+  assert.equal((text.match(/New Browser/g) || []).length, 1, "bootstrap only in the first test");
+  assert.equal((text.match(/New Page/g) || []).length, 1);
+});
+test("buildSuite: an initial marker names the first test (no empty bootstrap test)", () => {
+  const text = buildSuite({
+    testName: "Ignored",
+    steps: [{ type: "test", name: "Actual First" }, { type: "click", locator: "id=a" }],
+  });
+  assert.match(text, /\*\*\* Test Cases \*\*\*\nActual First\n    New Browser/);
+  assert.ok(!text.includes("Ignored"));
+});
+test("buildSuite: a trailing marker still yields a valid (non-empty) test", () => {
+  const text = buildSuite({
+    steps: [{ type: "click", locator: "id=a" }, { type: "test", name: "Empty Tail" }],
+  });
+  assert.match(text, /Empty Tail\n    No Operation\n/);
+});
+test("buildResourcePair: markers split the suite, bootstrap only once", () => {
+  const { resource, suite } = buildResourcePair({
+    testName: "Login",
+    steps: [
+      { type: "click", locator: "id=go", name: "Go" },
+      { type: "test", name: "Second Scenario" },
+      { type: "click", locator: "id=go", name: "Go" },
+    ],
+  });
+  assert.match(suite, /Login\n    New Browser/);
+  assert.match(suite, /Second Scenario\n    Click Go/);
+  assert.equal((suite.match(/New Browser/g) || []).length, 1);
+  assert.equal((resource.match(/^Click Go$/gm) || []).length, 1, "keyword still deduped across scenarios");
+});
+
+// ---- CSS fallback locators in the resource pair ----------------------------
+test("buildResourcePair: css fallback becomes a _FALLBACK variable + IF/ELSE body", () => {
+  const { resource, suite } = buildResourcePair({
+    steps: [
+      { type: "fill", locator: 'role=textbox[name="Username"]', strategy: "role",
+        css: '[id="login"] > input:nth-of-type(1)', name: "Username", value: "admin" },
+      { type: "click", locator: 'role=button[name="Log in"]', strategy: "role",
+        css: '[id="login"] > button:nth-of-type(1)', name: "Log in" },
+    ],
+  });
+  // fallback variables next to the primaries
+  assert.match(resource, /\$\{LOC_1_USERNAME\}    role=textbox\[name="Username"\]/);
+  assert.match(resource, /\$\{LOC_1_USERNAME_FALLBACK\}    \[id="login"\] > input:nth-of-type\(1\)/);
+  assert.match(resource, /\$\{LOC_2_LOG_IN_FALLBACK\}    \[id="login"\] > button:nth-of-type\(1\)/);
+  // IF/ELSE body probing the primary first, arg used in BOTH branches
+  const expectedBody = [
+    "Fill Username",
+    "    [Arguments]    ${value}",
+    "    ${found}=    Get Element Count    ${LOC_1_USERNAME}",
+    "    IF    ${found} > 0",
+    "        Fill Text    ${LOC_1_USERNAME}    ${value}",
+    "    ELSE",
+    "        Log    Primary locator not found - falling back to the recorded CSS path    WARN",
+    "        Fill Text    ${LOC_1_USERNAME_FALLBACK}    ${value}",
+    "    END",
+  ].join("\n");
+  assert.ok(resource.includes(expectedBody), "IF/ELSE fallback body emitted verbatim");
+  assert.match(resource, /Click Log In\n    \$\{found\}=    Get Element Count    \$\{LOC_2_LOG_IN\}/);
+  // the suite stays locator-free either way
+  assert.ok(!suite.includes("role="));
+  assert.ok(!suite.includes("nth-of-type"));
+});
+test("buildResourcePair: no fallback when css equals the locator or is absent", () => {
+  const { resource } = buildResourcePair({
+    steps: [
+      { type: "click", locator: "body > button:nth-of-type(1)", strategy: "css-path",
+        css: "body > button:nth-of-type(1)", name: "Raw" },
+      { type: "click", locator: "id=save", name: "Save" },
+    ],
+  });
+  assert.ok(!resource.includes("_FALLBACK"), "no fallback variable emitted");
+  assert.ok(!resource.includes("IF    "), "simple keyword bodies kept");
+  assert.match(resource, /Click Save\n    Click    \$\{LOC_2_SAVE\}/);
+});
+test("buildResourcePair: css-path strategy never gets a fallback even if css differs", () => {
+  const { resource } = buildResourcePair({
+    steps: [{ type: "click", locator: "body > b:nth-of-type(1)", strategy: "css-path",
+              css: "body > i:nth-of-type(1)", name: "Odd" }],
+  });
+  assert.ok(!resource.includes("_FALLBACK"));
+});
+
+// ---- parseSuite (.robot re-import) -----------------------------------------
+const { parseSuite } = emit;
+
+test("parseSuite: round-trips a buildSuite export (supported step set)", () => {
+  const steps = [
+    { type: "click", locator: 'role=button[name="Log in"]' },
+    { type: "fill", locator: "id=user", value: "admin" },
+    { type: "select", locator: "id=country", value: "France" },
+    { type: "check", locator: "id=tos" },
+    { type: "uncheck", locator: "id=news" },
+    { type: "press", key: "Enter" },
+    { type: "wait-load" },
+    { type: "assert-visible", locator: "id=hdr" },
+    { type: "assert-text", locator: "id=hdr", value: "Welcome" },
+    { type: "assert-value", locator: "id=user", value: "admin" },
+    { type: "assert-count", locator: 'text="Row"', value: 3 },
+    { type: "capture", locator: "id=hdr" },
+    { type: "test", name: "Second Scenario" },
+    { type: "click", locator: "id=next" },
+  ];
+  const text = buildSuite({ testName: "First Scenario", url: "https://app.example/x", steps });
+  const parsed = parseSuite(text);
+  assert.equal(parsed.testName, "First Scenario");
+  assert.equal(parsed.url, "https://app.example/x");
+  assert.deepEqual(parsed.steps, steps);
+  assert.deepEqual(parsed.skipped, []);
+});
+test("parseSuite: escaped values survive the round trip", () => {
+  const steps = [{ type: "fill", locator: "id=q", value: "a  b\tc\nd #tag" }];
+  const parsed = parseSuite(buildSuite({ steps }));
+  assert.deepEqual(parsed.steps, steps);
+});
+test("parseSuite: skips Settings/Keywords sections and bootstrap lines", () => {
+  const text = [
+    "*** Settings ***",
+    "Library    Browser",
+    "Resource    recorded_keywords.resource",
+    "",
+    "*** Keywords ***",
+    "Click Go",
+    "    Click    ${LOC_1_GO}",
+    "",
+    "*** Test Cases ***",
+    "My Test",
+    "    New Browser    chromium    headless=False",
+    "    New Page    https://x.example/",
+    "    Click    id=a",
+    "    No Operation",
+  ].join("\n");
+  const parsed = parseSuite(text);
+  assert.equal(parsed.testName, "My Test");
+  assert.equal(parsed.url, "https://x.example/");
+  assert.deepEqual(parsed.steps, [{ type: "click", locator: "id=a" }]);
+  assert.deepEqual(parsed.skipped, []);
+});
+test("parseSuite: unparseable lines are surfaced in `skipped`, never dropped", () => {
+  const text = [
+    "*** Test Cases ***",
+    "T",
+    "    New Page    https://x.example/",
+    "    Click    id=a",
+    "    Log    hello there",
+    "    [Tags]    smoke",
+    "    Fill Username    admin",
+  ].join("\n");
+  const parsed = parseSuite(text);
+  assert.deepEqual(parsed.steps, [{ type: "click", locator: "id=a" }]);
+  assert.deepEqual(parsed.skipped,
+    ["Log    hello there", "[Tags]    smoke", "Fill Username    admin"]);
+});

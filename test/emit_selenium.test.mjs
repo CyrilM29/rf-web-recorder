@@ -111,3 +111,39 @@ test("emitBody joins translated lines", () => {
   assert.ok(body.includes("Input Text    css:#login"));
   assert.ok(body.endsWith("\n"));
 });
+
+// ---- scenario markers (multi-test sessions) --------------------------------
+
+test("markers become comments in emitStep/emitBody", () => {
+  assert.deepEqual(sel.emitStep({ type: "test", name: "Checkout" }),
+    ["# --- Test: Checkout ---"]);
+});
+
+test("buildSuite splits on markers; Open Browser only in the first test", () => {
+  const text = sel.buildSuite({
+    testName: "Login",
+    url: "https://app.example/",
+    steps: [
+      { type: "click", locator: "id=go" },
+      { type: "test", name: "Search Works" },
+      { type: "fill", locator: "id=q", value: "robot" },
+    ],
+  });
+  assert.match(text, /Login\n    Open Browser    https:\/\/app.example\/    Chrome\n    Click Element    id:go\n/);
+  assert.match(text, /Search Works\n    Input Text    id:q    robot\n/);
+  assert.equal((text.match(/Open Browser/g) || []).length, 1, "bootstrap only once");
+});
+
+test("buildResourcePair splits the suite on markers; bootstrap only once", () => {
+  const pair = sel.buildResourcePair({
+    testName: "Login",
+    steps: [
+      { type: "click", locator: "id=go", name: "Go" },
+      { type: "test", name: "Second Scenario" },
+      { type: "click", locator: "id=go", name: "Go" },
+    ],
+  });
+  assert.match(pair.suite, /Login\n    Open Browser/);
+  assert.match(pair.suite, /Second Scenario\n    Click Go/);
+  assert.equal((pair.suite.match(/Open Browser/g) || []).length, 1);
+});

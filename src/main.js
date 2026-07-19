@@ -13,15 +13,17 @@
   var instance = CORE.recorder.create();
 
   global.__RFREC = {
-    version: "0.1.0",
+    version: "0.3.0",
     start: instance.start,
     stop: instance.stop,
     isRunning: instance.isRunning,
     toggleRecording: instance.toggleRecording,
     setRecording: instance.setRecording,
     isRecording: instance.isRecording,
-    exportAs: instance.exportAs,      // "robot" | "resource-pair" | "body"
-    core: CORE,                       // locator/step/emit internals for power users
+    play: instance.play,              // in-panel replay of the recorded steps
+    isReplaying: instance.isReplaying,
+    exportAs: instance.exportAs,      // "robot" | "resource-pair" | "body" (+ "selenium-" prefixes)
+    core: CORE,                       // locator/step/emit/resolve internals for power users
   };
 
   instance.start();

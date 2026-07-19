@@ -20,7 +20,8 @@ const ORDER = [
   "src/core/locators.js",
   "src/core/steps.js",
   "src/core/emit_browser.js",
-  "src/core/emit_selenium.js",   // depends on emit_browser (rfEscape)
+  "src/core/emit_selenium.js",   // depends on emit_browser (rfEscape, splitScenarios)
+  "src/core/resolve.js",         // depends on locators (ariaRole, accName, collapse)
   "src/panel/panel.js",
   "src/recorder.js",
   "src/main.js",
@@ -33,9 +34,11 @@ export function build() {
     " * rf-web-recorder v" + pkg.version + " — universal Robot Framework Browser-library recorder.",
     " *",
     " * Hover to highlight + click to capture locators; « rec » records your",
-    " * interactions as replayable Browser-library keywords; « export » downloads",
-    " * a .robot suite (or a .resource + .robot pair). Right-click while recording",
-    " * opens the assertion menu. Esc stops. API: window.__RFREC",
+    " * interactions as replayable Browser-library keywords; « play » replays the",
+    " * recorded steps in place; « +test » starts a new test case; « export »",
+    " * downloads a .robot suite (or a .resource + .robot pair) and re-imports",
+    " * one. Right-click while recording opens the assertion menu; double-click",
+    " * a step row to edit it. Esc stops. API: window.__RFREC",
     " *",
     " * Two ways to run it on any web page:",
     " *   1. paste this whole file into the DevTools console, or",

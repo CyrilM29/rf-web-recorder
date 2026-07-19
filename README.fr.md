@@ -30,7 +30,11 @@ traduire chaque étape à la main. rf-web-recorder émet des lignes `Click` /
 `Fill Text` / `Get Text` à coller telles quelles dans un `.robot` — ou exporte
 directement une suite exécutable, ou une **paire resource-first** où les
 localisateurs vivent dans un `.resource` et où le test se lit comme du langage
-métier (le patron que les équipes RF maintiennent réellement).
+métier (le patron que les équipes RF maintiennent réellement). Il reprend
+aussi les bons côtés du workflow Selenium IDE — rejeu dans le panneau,
+édition des steps sur place, plusieurs tests par session, ré-import d'une
+suite exportée — sans adopter son enregistrement de contrôle de flux (voir
+les non-objectifs assumés plus bas).
 
 ## Démarrage rapide
 
@@ -116,6 +120,37 @@ attentes de chargement consécutives fusionnent. Les steps survivent aux
 rechargements de page (sessionStorage), se réordonnent (↑ ↓) et se suppriment
 (✕) dans le panneau ; le nom du test est éditable.
 
+**Rejeu dans le panneau** (bouton `play`) : les steps enregistrés se rejouent
+séquentiellement (~350 ms d'intervalle) sur la page vivante — les clics
+émettent de vrais événements mousedown/mouseup/click, les saisies posent la
+valeur puis émettent input+change, les selects choisissent l'option par
+libellé, les touches partent vers l'élément focalisé, et les **assertions
+enregistrées sont évaluées sur place** (visible / texte / valeur / compte).
+L'élément de chaque step est surligné pendant l'exécution et la ligne courante
+est marquée dans le panneau ; un échec arrête le rejeu, marque la ligne en
+rouge et nomme la raison dans la ligne d'indice ; un succès affiche
+`replay OK (N steps)`. `Échap` annule un rejeu en cours. Le rejeu n'enregistre
+jamais ses propres événements synthétiques. Limite assumée : les valeurs sont
+posées directement sur le DOM — les frameworks qui n'acceptent que les vrais
+gestes utilisateur (inputs contrôlés React, par exemple) peuvent les ignorer ;
+la suite exportée, elle, se rejoue via la vraie bibliothèque Browser.
+
+**Édition sur place** : double-cliquez sur une ligne de step pour l'éditer en
+ligne — la valeur pour les steps qui en portent une (saisie / select /
+assertions), sinon la touche (press), le nom du scénario (marqueurs) ou le
+localisateur. Entrée valide, Échap annule. Éditer un localisateur à la main
+efface sa pastille de stratégie et son repli CSS enregistrés (ils ne
+décrivent plus le nouveau localisateur).
+
+**Plusieurs tests par session** (bouton `+test`) : nommez le scénario suivant
+dans l'invite en ligne et continuez d'enregistrer — une ligne de marqueur de
+scénario (`— Test: nom —`) est ajoutée, et chaque export découpe
+l'enregistrement en plusieurs entrées `*** Test Cases ***` : le premier test
+porte le nom éditable et l'amorce `New Browser`/`New Page`, chaque marqueur
+nomme le test suivant, et les tests suivants **continuent la même session
+navigateur** (pas de ré-amorçage). Le rejeu traite les marqueurs comme des
+séparateurs.
+
 **Menu d'assertions** : pendant l'enregistrement, **clic droit** sur un élément :
 
 | Entrée du menu | Keyword émis |
@@ -134,7 +169,8 @@ supprimé que pendant le mode record.
 |---|---|
 | `Alt+Shift+U` | Bascule l'enregistrement (extension ; injecte l'enregistreur si besoin) |
 | Clic droit | Menu d'assertions (mode record uniquement) |
-| `Échap` | Ferme le menu d'assertions, sinon arrête l'enregistreur (steps conservés) |
+| Double-clic sur une ligne | Édite le step en ligne (Entrée valide, Échap annule) |
+| `Échap` | Annule un rejeu en cours, sinon ferme le menu d'assertions, sinon arrête l'enregistreur (steps conservés) |
 
 ## Formats d'export
 
@@ -148,7 +184,30 @@ popup utilise le premier) :
 2. **Paire resource-first (Browser)** — `recorded_keywords.resource` (chaque
    localisateur distinct devient une variable `${LOC_<N>_<SLUG>}` + de petits
    keywords d'action comme `Fill Username`) et une suite `.robot` qui n'appelle
-   **que ces keywords** : aucun localisateur n'apparaît dans le test.
+   **que ces keywords** : aucun localisateur n'apparaît dans le test. Quand le
+   repli chemin-CSS enregistré d'un step diffère de son localisateur gagnant,
+   la resource reçoit aussi une variable `${LOC_<N>_<SLUG>_FALLBACK}` et le
+   corps du keyword devient du vrai contrôle de flux Robot Framework
+   auto-réparant :
+
+   ```robotframework
+   Click Username
+       ${found}=    Get Element Count    ${LOC_1_USERNAME}
+       IF    ${found} > 0
+           Click    ${LOC_1_USERNAME}
+       ELSE
+           Log    Primary locator not found - falling back to the recorded CSS path    WARN
+           Click    ${LOC_1_USERNAME_FALLBACK}
+       END
+   ```
+
+   Le localisateur principal est essayé d'abord ; le chemin CSS ne prend le
+   relais que s'il ne résout plus, et le WARN rend la dérive visible dans le
+   log au lieu de la masquer. Les keywords à valeur gardent leur `[Arguments]`
+   et utilisent l'argument dans les deux branches. (L'émetteur SeleniumLibrary
+   reste volontairement inchangé : il consomme déjà directement le repli CSS
+   pour les localisateurs `role=`/`text=` — un IF/ELSE ne ferait que rejouer
+   le même sélecteur.)
 3. **Suite `.robot` complète (SeleniumLibrary)** — le même enregistrement, émis
    en keywords SeleniumLibrary (`Click Element`, `Input Text`,
    `Select From List By Label`, `Element Text Should Be`,
@@ -157,6 +216,16 @@ popup utilise le premier) :
    localisateur dans le test, saveur SeleniumLibrary.
 5. **Corps de steps brut** — presse-papiers uniquement (keywords Browser), pour
    coller dans un test existant.
+
+Le même menu propose aussi **Import .robot…** : choisissez une suite
+Browser exportée précédemment et elle est reconvertie en liste de steps
+(remplaçant les steps courants), noms de tests compris — plusieurs tests
+deviennent des marqueurs de scénario, le premier restaure le nom du test,
+`New Page` restaure l'URL de départ. Les lignes que l'analyseur ne comprend
+pas (appels de keywords resource, `[Tags]`, `Log`…) sont comptées comme
+ignorées dans la ligne d'indice — jamais perdues en silence.
+Export → import → export boucle sans perte sur l'ensemble des steps
+supportés.
 
 ### Traduction des localisateurs vers SeleniumLibrary
 
@@ -191,8 +260,9 @@ Arborescence :
 | `src/core/steps.js` | Modèle de step + règles de dédup/compaction. Pur. |
 | `src/core/emit_browser.js` | Step → lignes de keywords Browser ; constructeur de suite ; constructeur resource-first. Pur. |
 | `src/core/emit_selenium.js` | Second adaptateur d'émission : step → lignes de keywords SeleniumLibrary, avec traduction des localisateurs Browser→Selenium (repli CSS par step). Pur. |
-| `src/panel/panel.js` | Panneau flottant déplaçable, surlignage, menu flottant. Navigateur uniquement. |
-| `src/recorder.js` | Câblage des événements : modes capture/record, menu d'assertions, persistance, export. |
+| `src/core/resolve.js` | L'inverse de la génération de localisateurs : sélecteur → élément(s) (`resolveSelector`/`countSelector`), planification du rejeu (`planStep`) et évaluation d'assertions sur place (`evalAssertion`). Pur, duck-typé. |
+| `src/panel/panel.js` | Panneau flottant déplaçable, surlignage, menu flottant, éditeurs en ligne, statut de ligne du rejeu. Navigateur uniquement. |
+| `src/recorder.js` | Câblage des événements : modes capture/record, rejeu dans le panneau, menu d'assertions, persistance, export + import .robot. |
 | `src/main.js` | Bootstrap `window.__RFREC` (API start/stop/export). |
 | `extension/` | Extension MV3 (`recorder.js` y est généré par le build). |
 | `test/` | Suites `node --test` du cœur pur + des sorties de build. |
@@ -201,6 +271,16 @@ Les modules `core/` n'exigent jamais un vrai DOM : ils acceptent tout objet
 exposant `tagName` / `getAttribute()` / `textContent` / `parentElement` /
 `children`… C'est ce qui les rend testables avec de minuscules faux nœuds — le
 vrai DOM se trouve simplement satisfaire la même interface à l'exécution.
+
+## Non-objectifs assumés
+
+- **Pas d'enregistrement de contrôle de flux** (pas de if/else, boucles ou
+  variables capturés depuis l'interface, contrairement à Selenium IDE) : la
+  logique appartient à Robot Framework — keywords resource, templates,
+  `IF`/`FOR` écrits là où on peut les relire et les maintenir — pas à un
+  enregistrement. Un enregistrement est un brouillon linéaire ; le seul
+  contrôle de flux que l'enregistreur émette est le patron de repli de
+  localisateur ci-dessus, et il le génère, il ne l'enregistre pas.
 
 ## Limites connues
 

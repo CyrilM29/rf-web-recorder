@@ -1,8 +1,9 @@
 /*
  * rf-web-recorder — recorder.js
  *
- * Event wiring: capture + record modes, hover highlight, right-click assertion
- * menu, sessionStorage persistence, export (3 formats). Browser-only.
+ * Event wiring: capture + record modes, in-panel replay, hover highlight,
+ * right-click assertion menu, sessionStorage persistence, export + .robot
+ * re-import. Browser-only.
  *
  * Capture mode (default): hover highlights the element and shows its best
  * locator; a click copies a `Get Element    <locator>` line and lists the
@@ -25,17 +26,21 @@
   var NAME_KEY = "__rfrecName";
   var URL_KEY = "__rfrecUrl";
   var DEFAULT_NAME = "Recorded Scenario";
-  var HINT_CAPTURE = "Hover + click to capture a locator. rec to record. Esc to stop.";
+  var REPLAY_DELAY = 350;   // ms between replayed steps
+  var HINT_CAPTURE = "Hover + click to capture a locator. rec to record, play to replay. Esc to stop.";
   var HINT_RECORD = "Recording: clicks and typed values become steps. " +
-    "Right-click an element for assertions. export offers Browser / SeleniumLibrary formats.";
+    "Right-click an element for assertions. +test starts a new test case. " +
+    "export offers Browser / SeleniumLibrary formats.";
 
   function createRecorder() {
     var locators = CORE.locators, stepsCore = CORE.steps, emit = CORE.emit,
-        emitSelenium = CORE.emitSelenium, ui = CORE.panel;
+        emitSelenium = CORE.emitSelenium, resolveCore = CORE.resolve, ui = CORE.panel;
     var doc = global.document;
 
     var running = false;
     var recording = false;
+    var replaying = false;   // replay in progress: its synthetic events are never recorded
+    var playTimer = 0;
     var captures = [];
     var steps = [];
     var panel = null, overlay = null, menu = null;
@@ -136,10 +141,14 @@
       overlay.show({ left: r.left, top: r.top, width: r.width, height: r.height },
         "[" + first.strategy + "] " + first.selector);
     }
-    function onMove(event) { lastEvt = event; if (!raf) raf = global.requestAnimationFrame(paint); }
+    function onMove(event) {
+      if (replaying) return;                          // keep the replay highlight stable
+      lastEvt = event; if (!raf) raf = global.requestAnimationFrame(paint);
+    }
 
     // ---- click: capture (inspect) or record (step) -------------------------
     function onClick(event) {
+      if (replaying) return;                          // never record replayed events
       if (inOurUI(event.target)) return;              // panel/menu handle their own clicks
       if (menu && menu.isOpen()) { menu.close(); return; }
       var target = event.target && event.target.nodeType === 1 ? event.target : null;
@@ -164,6 +173,7 @@
 
     // ---- change: fills, selects, checkboxes --------------------------------
     function onChange(event) {
+      if (replaying) return;                          // never record replayed events
       if (!recording || inOurUI(event.target)) return;
       var t = event.target;
       if (!t || t.nodeType !== 1) return;
@@ -198,8 +208,14 @@
 
     // ---- keydown: Enter/Tab presses, Escape stops --------------------------
     function onKey(event) {
+      if (replaying) {                                // never record replayed events
+        if (event.key === "Escape") cancelReplay("Replay cancelled.");
+        return;
+      }
       if (event.key === "Escape") {
         if (menu && menu.isOpen()) return;            // menu's own Escape closes it first
+        var t = event.target;
+        if (inOurUI(t) && t && t.tagName === "INPUT") return; // inline editors handle their own Escape
         stop();
         return;
       }
@@ -219,6 +235,7 @@
       return 1;
     }
     function onContextMenu(event) {
+      if (replaying) return;
       if (!recording || inOurUI(event.target)) return; // default context menu outside record mode
       var target = event.target && event.target.nodeType === 1 ? event.target : null;
       if (!target) return;
@@ -242,8 +259,127 @@
     }
 
     // ---- navigation -> replayable wait -------------------------------------
-    function onNav() { if (recording) addStep({ type: "wait-load" }); }
-    function onBeforeUnload() { if (recording) { stepsCore.addStep(steps, { type: "wait-load" }); saveSteps(); } }
+    function onNav() { if (recording && !replaying) addStep({ type: "wait-load" }); }
+    function onBeforeUnload() { if (recording && !replaying) { stepsCore.addStep(steps, { type: "wait-load" }); saveSteps(); } }
+
+    // ---- in-panel replay ---------------------------------------------------
+    // Steps replay sequentially (REPLAY_DELAY ms apart) against the live DOM:
+    // synthetic events for actions, resolve.evalAssertion for assertions.
+    // A failure stops the run, marks the row red and names the reason.
+    function synthMouse(el, type) {
+      var ev;
+      try { ev = new MouseEvent(type, { bubbles: true, cancelable: true, view: global }); }
+      catch (e) { ev = doc.createEvent("MouseEvents"); ev.initEvent(type, true, true); }
+      el.dispatchEvent(ev);
+    }
+    function synthEvent(el, type) {
+      var ev;
+      try { ev = new Event(type, { bubbles: true }); }
+      catch (e) { ev = doc.createEvent("HTMLEvents"); ev.initEvent(type, true, false); }
+      el.dispatchEvent(ev);
+    }
+    function synthKey(el, type, key) {
+      var ev;
+      try { ev = new KeyboardEvent(type, { bubbles: true, cancelable: true, key: key }); }
+      catch (e) { ev = doc.createEvent("Events"); ev.initEvent(type, true, true); ev.key = key; }
+      el.dispatchEvent(ev);
+    }
+    function highlightElement(el, label) {
+      if (!overlay || !el || typeof el.getBoundingClientRect !== "function") return;
+      try {
+        var r = el.getBoundingClientRect();
+        overlay.show({ left: r.left, top: r.top, width: r.width, height: r.height }, label);
+        overlay.flash();
+      } catch (e) { /* detached */ }
+    }
+    // One planned step against the live DOM. Returns { ok, reason? } or "skip".
+    function runPlanned(st, plan) {
+      switch (plan.action) {
+        case "marker": case "noop": return "skip";
+        case "wait": return { ok: true };            // the pause IS the step (see next())
+        case "press": {
+          var target = doc.activeElement || doc.body;
+          synthKey(target, "keydown", plan.key);
+          synthKey(target, "keyup", plan.key);
+          return { ok: true };
+        }
+        case "assert": {
+          var res = resolveCore.evalAssertion(st, doc);
+          if (res.element) highlightElement(res.element, stepLine(st));
+          return res.ok ? { ok: true } : { ok: false, reason: res.reason };
+        }
+      }
+      var el = resolveCore.resolveSelector(st.locator, doc);
+      if (!el) return { ok: false, reason: "element not found: " + st.locator };
+      highlightElement(el, stepLine(st));
+      switch (plan.action) {
+        case "click":
+          synthMouse(el, "mousedown"); synthMouse(el, "mouseup"); synthMouse(el, "click");
+          break;
+        case "fill":
+          el.value = plan.value;
+          synthEvent(el, "input"); synthEvent(el, "change");
+          break;
+        case "select": {
+          var oi = resolveCore.findOptionIndex(el, plan.label);
+          if (oi < 0) return { ok: false, reason: 'no option labelled "' + plan.label + '" in ' + st.locator };
+          el.selectedIndex = oi;
+          synthEvent(el, "input"); synthEvent(el, "change");
+          break;
+        }
+        case "setChecked":
+          el.checked = plan.checked;
+          synthEvent(el, "change");
+          break;
+        default:
+          return { ok: false, reason: "unsupported action: " + plan.action };
+      }
+      return { ok: true };
+    }
+    function cancelReplay(message) {
+      if (!replaying) return false;
+      replaying = false;
+      if (playTimer) { global.clearTimeout(playTimer); playTimer = 0; }
+      if (panel) { panel.setRowStatus(-1, null); if (message) panel.setHint(message); }
+      if (overlay) overlay.hide();
+      return true;
+    }
+    function play() {
+      if (replaying || !steps.length || !panel) return;
+      replaying = true;
+      var i = 0;
+      var executed = 0;
+      panel.setHint("Replaying…  Esc cancels.");
+      function fail(idx, reason) {
+        replaying = false; playTimer = 0;
+        panel.setRowStatus(idx, "fail");
+        panel.setHint("Replay FAILED at step " + (idx + 1) + ": " + reason);
+      }
+      function next() {
+        playTimer = 0;
+        if (!replaying) return;                       // cancelled or stopped
+        if (i >= steps.length) {
+          replaying = false;
+          panel.setRowStatus(-1, null);
+          panel.setHint("replay OK (" + executed + " steps)");
+          if (overlay) overlay.hide();
+          return;
+        }
+        var idx = i++;
+        var st = steps[idx];
+        var plan = resolveCore.planStep(st);
+        panel.setRowStatus(idx, plan.action === "marker" ? null : "active");
+        var result;
+        try { result = runPlanned(st, plan); }
+        catch (e) { fail(idx, String((e && e.message) || e)); return; }
+        if (result && result.ok === false) { fail(idx, result.reason || "step failed"); return; }
+        if (result !== "skip") executed++;
+        var delay = plan.action === "marker" ? 0
+          : plan.action === "wait" ? plan.ms : REPLAY_DELAY;
+        playTimer = global.setTimeout(next, delay);
+      }
+      next();
+    }
 
     // ---- export ------------------------------------------------------------
     function testName() { return (panel && panel.getTestName() || "").trim() || DEFAULT_NAME; }
@@ -276,7 +412,66 @@
         { label: "Download .robot suite (SeleniumLibrary)", onPick: function () { exportAs("selenium-robot"); } },
         { label: "Download .resource + .robot pair (SeleniumLibrary)", onPick: function () { exportAs("selenium-resource-pair"); } },
         { label: "Copy step body to clipboard", onPick: function () { exportAs("body"); } },
+        { label: "Import .robot…", onPick: importRobot },
       ]);
+    }
+
+    // ---- .robot re-import --------------------------------------------------
+    // Reads an exported Browser-library suite back into the step list
+    // (REPLACES the current steps). Unparseable lines are counted in the
+    // hint — parseSuite surfaces them, it never drops them silently.
+    function importRobot() {
+      var input = doc.createElement("input");
+      input.type = "file";
+      input.accept = ".robot,.txt,text/plain";
+      input.style.display = "none";
+      input.addEventListener("change", function () {
+        var file = input.files && input.files[0];
+        input.remove();
+        if (!file) return;
+        var reader = new FileReader();
+        reader.onload = function () {
+          var parsed = emit.parseSuite(String(reader.result || ""));
+          steps = parsed.steps;
+          if (parsed.testName) {
+            saveName(parsed.testName);
+            if (panel) panel.setTestName(parsed.testName);
+          }
+          if (parsed.url) {
+            try { global.sessionStorage.setItem(URL_KEY, parsed.url); } catch (e) { /* ignore */ }
+          }
+          saveSteps();
+          renderPanel();
+          if (panel) {
+            panel.setHint("Imported " + steps.length + " step(s) from " + file.name +
+              (parsed.skipped.length ? " — skipped " + parsed.skipped.length + " unparseable line(s)" : "") + ".");
+          }
+        };
+        reader.readAsText(file);
+      });
+      doc.documentElement.appendChild(input);
+      input.click();
+    }
+
+    // ---- step editing / scenario markers -----------------------------------
+    // Inline edit commit (panel double-click): value-bearing steps update the
+    // value, press updates the key, markers their name, everything else the
+    // locator (locator edits invalidate the recorded strategy/CSS fallback).
+    function editStep(i, text) {
+      var st = steps[i];
+      if (!st) return;
+      if ("value" in st) {
+        st.value = (st.type === "assert-count" && /^\d+$/.test(text.trim())) ? Number(text.trim()) : text;
+      } else if (st.type === "press") {
+        st.key = text;
+      } else if (st.type === "test") {
+        st.name = text;
+      } else {
+        st.locator = text;
+        st.strategy = "edited";
+        delete st.css;
+      }
+      saveSteps(); renderPanel();
     }
 
     // ---- recording state ---------------------------------------------------
@@ -305,6 +500,8 @@
       menu = ui.createMenu(doc);
       panel = ui.createPanel(doc, {
         onToggleRec: function () { setRecording(!recording); },
+        onPlay: play,
+        onAddTest: function (name) { addStep({ type: "test", name: name }); },
         onExport: onExportClick,
         onClear: function () {
           captures = []; steps = [];
@@ -320,6 +517,7 @@
           saveSteps(); renderPanel();
         },
         onRemoveStep: function (i) { steps.splice(i, 1); saveSteps(); renderPanel(); },
+        onEditStep: editStep,
         onNameInput: saveName,
       });
       panel.setTestName(loadName());
@@ -333,11 +531,13 @@
       global.addEventListener("hashchange", onNav, true);
       global.addEventListener("popstate", onNav, true);
       global.addEventListener("beforeunload", onBeforeUnload, true);
-      console.info("[rf-web-recorder] Ready. Hover to highlight, click to capture, rec to record. " +
+      console.info("[rf-web-recorder] Ready. Hover to highlight, click to capture, rec to record, " +
+        "play to replay, +test to start a new test case. " +
         "Right-click while recording opens the assertion menu. Esc stops.");
     }
     function stop() {
       if (!running) return;
+      cancelReplay(null);
       running = false;
       recording = false;
       doc.removeEventListener("mousemove", onMove, true);
@@ -363,6 +563,8 @@
       toggleRecording: function () { setRecording(!recording); },
       setRecording: setRecording,
       isRecording: function () { return recording; },
+      play: play,
+      isReplaying: function () { return replaying; },
       exportAs: exportAs,
     };
   }

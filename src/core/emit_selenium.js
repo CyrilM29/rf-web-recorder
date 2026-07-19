@@ -50,6 +50,9 @@
   // One step -> one SeleniumLibrary keyword line (or a comment, never a loss).
   function emitStep(step) {
     if (!step) return [];
+    if (step.type === "test") {
+      return ["# --- Test: " + (step.name || "Test") + " ---"];  // scenario marker (comment in a body paste)
+    }
     if (step.type === "press") {
       var key = KEY_NAMES[step.key] || String(step.key || "").toUpperCase();
       return ["Press Keys" + SEP + "None" + SEP + rfEscape(key)];
@@ -92,7 +95,9 @@
     return (opts && opts.testName ? String(opts.testName) : "").trim() || "Recorded Scenario";
   }
 
-  // Full runnable .robot suite (SeleniumLibrary session bootstrap).
+  // Full runnable .robot suite (SeleniumLibrary session bootstrap). `test`
+  // markers split it into several test cases; Open Browser runs only in the
+  // first one — later tests continue the same session.
   function buildSuite(opts) {
     opts = opts || {};
     var lines = [];
@@ -100,11 +105,18 @@
     lines.push("Library" + SEP + "SeleniumLibrary");
     lines.push("");
     lines.push("*** Test Cases ***");
-    lines.push(testNameOf(opts));
-    lines.push(SEP + "Open Browser" + SEP + rfEscape(opts.url || "about:blank") + SEP +
-               (opts.seleniumBrowser || "Chrome"));
-    (opts.steps || []).forEach(function (st) {
-      emitStep(st).forEach(function (l) { lines.push(SEP + l); });
+    var groups = base.splitScenarios(opts.steps);
+    groups.forEach(function (group, gi) {
+      lines.push(base.scenarioName(group, gi, testNameOf(opts)));
+      if (gi === 0) {
+        lines.push(SEP + "Open Browser" + SEP + rfEscape(opts.url || "about:blank") + SEP +
+                   (opts.seleniumBrowser || "Chrome"));
+      } else if (!group.items.length) {
+        lines.push(SEP + "No Operation");        // RF forbids an empty test body
+      }
+      group.items.forEach(function (st) {
+        emitStep(st).forEach(function (l) { lines.push(SEP + l); });
+      });
     });
     return lines.join("\n") + "\n";
   }
@@ -156,8 +168,9 @@
     var keywords = [];
     var keywordByShape = {};
     var usedNames = {};
-    var suiteCalls = [];
+    var suiteCalls = [];     // strings, or { marker: name } scenario boundaries
     steps.forEach(function (st) {
+      if (st.type === "test") { suiteCalls.push({ marker: String(st.name || "") }); return; }
       var shape = KEYWORD_SHAPES[st.type];
       var loc = toSeleniumLocator(st);
       if (!shape || !loc) {
@@ -206,16 +219,24 @@
       kw.lines.forEach(function (l) { res.push(l); });
     });
 
-    // 4. suite text (locator-free)
+    // 4. suite text (locator-free; markers split it into several tests,
+    //    the Open Browser bootstrap in the first only)
     var suite = [];
     suite.push("*** Settings ***");
     suite.push("Resource" + SEP + resourceName);
     suite.push("");
     suite.push("*** Test Cases ***");
-    suite.push(testNameOf(opts));
-    suite.push(SEP + "Open Browser" + SEP + rfEscape(opts.url || "about:blank") + SEP +
-               (opts.seleniumBrowser || "Chrome"));
-    suiteCalls.forEach(function (c) { suite.push(SEP + c); });
+    var groups = base.splitScenarios(suiteCalls);
+    groups.forEach(function (group, gi) {
+      suite.push(base.scenarioName(group, gi, testNameOf(opts)));
+      if (gi === 0) {
+        suite.push(SEP + "Open Browser" + SEP + rfEscape(opts.url || "about:blank") + SEP +
+                   (opts.seleniumBrowser || "Chrome"));
+      } else if (!group.items.length) {
+        suite.push(SEP + "No Operation");
+      }
+      group.items.forEach(function (c) { suite.push(SEP + c); });
+    });
 
     return {
       resource: res.join("\n") + "\n",

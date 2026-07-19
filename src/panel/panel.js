@@ -1,10 +1,11 @@
 /*
  * rf-web-recorder — panel/panel.js
  *
- * Floating in-page UI: draggable/collapsible panel with rec/export/clear/stop
- * buttons, an editable test name, the ordered step list (move up/down, delete),
- * a hover highlight overlay, and a small floating menu used both for the
- * export-format picker and the right-click assertion menu.
+ * Floating in-page UI: draggable/collapsible panel with rec/play/+test/export/
+ * clear/stop buttons, an editable test name, the ordered step list (move
+ * up/down, delete, double-click inline edit, scenario-marker rows, replay row
+ * status), a hover highlight overlay, and a small floating menu used both for
+ * the export-format picker and the right-click assertion menu.
  *
  * Browser-only (touches the DOM). Ported from the author's SAPFX recorder
  * panel (Apache-2.0) and generalized — see NOTICE.
@@ -97,8 +98,9 @@
   }
 
   // ---- main panel ----------------------------------------------------------
-  // handlers: onToggleRec(), onExport(anchorRect), onClear(), onStop(),
-  //           onMoveStep(i, delta), onRemoveStep(i), onNameInput(value)
+  // handlers: onToggleRec(), onPlay(), onAddTest(name), onExport(anchorRect),
+  //           onClear(), onStop(), onMoveStep(i, delta), onRemoveStep(i),
+  //           onEditStep(i, text), onNameInput(value)
   function createPanel(doc, handlers) {
     var panel = doc.createElement("div");
     panel.id = "__rfrecPanel";
@@ -108,7 +110,7 @@
       "font:12px/1.45 -apple-system,Segoe UI,sans-serif;color:#222;overflow:hidden;";
 
     var head = doc.createElement("div");
-    head.style.cssText = "display:flex;align-items:center;gap:8px;padding:8px 10px;" +
+    head.style.cssText = "display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:8px 10px;" +
       "background:" + ACCENT + ";color:#fff;font-weight:600;cursor:move;";
     var dot = doc.createElement("span");   // blinking recording indicator
     dot.style.cssText = "width:9px;height:9px;border-radius:50%;background:" + REC_RED +
@@ -116,19 +118,24 @@
     var title = doc.createElement("span"); title.style.flex = "1";
     var btnCollapse = doc.createElement("button");
     var btnRec = doc.createElement("button");
+    var btnPlay = doc.createElement("button");
+    var btnAddTest = doc.createElement("button");
     var btnExport = doc.createElement("button");
     var btnClear = doc.createElement("button");
     var btnClose = doc.createElement("button");
-    [btnCollapse, btnRec, btnExport, btnClear, btnClose].forEach(function (b) {
+    [btnCollapse, btnRec, btnPlay, btnAddTest, btnExport, btnClear, btnClose].forEach(function (b) {
       b.style.cssText = "border:1px solid #fff;background:transparent;color:#fff;" +
-        "border-radius:4px;cursor:pointer;font:11px monospace;padding:2px 8px;";
+        "border-radius:4px;cursor:pointer;font:11px monospace;padding:2px 6px;";
     });
     btnCollapse.textContent = "▾";  // expanded marker
-    btnRec.textContent = "rec"; btnExport.textContent = "export";
+    btnRec.textContent = "rec"; btnPlay.textContent = "play";
+    btnAddTest.textContent = "+test"; btnExport.textContent = "export";
     btnClear.textContent = "clear"; btnClose.textContent = "stop";
+    btnPlay.title = "Replay the recorded steps on this page";
+    btnAddTest.title = "Start a new test case (scenario marker)";
     head.appendChild(dot); head.appendChild(title); head.appendChild(btnCollapse);
-    head.appendChild(btnRec); head.appendChild(btnExport);
-    head.appendChild(btnClear); head.appendChild(btnClose);
+    head.appendChild(btnRec); head.appendChild(btnPlay); head.appendChild(btnAddTest);
+    head.appendChild(btnExport); head.appendChild(btnClear); head.appendChild(btnClose);
 
     var nameRow = doc.createElement("div");
     nameRow.style.cssText = "display:flex;align-items:center;gap:6px;padding:4px 10px;border-bottom:1px solid #eee;";
@@ -145,6 +152,37 @@
     hint.style.cssText = "padding:6px 10px;color:#666;border-top:1px solid #eee;";
     panel.appendChild(head); panel.appendChild(nameRow); panel.appendChild(list); panel.appendChild(hint);
     doc.documentElement.appendChild(panel);
+
+    // +test inline prompt: a temporary one-line input above the step list;
+    // Enter commits the next scenario's name, Escape cancels.
+    var scenarioRow = null;
+    function promptScenario() {
+      if (scenarioRow) {
+        var existing = scenarioRow.lastChild;
+        if (existing && existing.focus) existing.focus();
+        return;
+      }
+      scenarioRow = doc.createElement("div");
+      scenarioRow.style.cssText = "display:flex;align-items:center;gap:6px;padding:4px 10px;border-bottom:1px solid #eee;";
+      var lbl = doc.createElement("span");
+      lbl.textContent = "New test:"; lbl.style.color = "#666";
+      var inp = doc.createElement("input");
+      inp.type = "text";
+      inp.placeholder = "next scenario name (Enter = add, Esc = cancel)";
+      inp.style.cssText = "flex:1;font:11px monospace;border:1px solid " + ACCENT + ";border-radius:3px;padding:2px 5px;";
+      function closePrompt() { if (scenarioRow) { scenarioRow.remove(); scenarioRow = null; } }
+      inp.addEventListener("keydown", function (e) {
+        e.stopPropagation();
+        if (e.key === "Enter") {
+          var name = inp.value.trim();
+          closePrompt();
+          if (name) handlers.onAddTest(name);
+        } else if (e.key === "Escape") { closePrompt(); }
+      });
+      scenarioRow.appendChild(lbl); scenarioRow.appendChild(inp);
+      panel.insertBefore(scenarioRow, list);
+      inp.focus();
+    }
 
     var styleEl = doc.createElement("style");
     styleEl.textContent = "@keyframes __rfrecBlink{50%{opacity:.25}}";
@@ -182,6 +220,8 @@
     doc.addEventListener("mouseup", onDragUp, true);
 
     btnRec.addEventListener("click", function () { handlers.onToggleRec(); });
+    btnPlay.addEventListener("click", function () { handlers.onPlay(); });
+    btnAddTest.addEventListener("click", function () { promptScenario(); });
     btnExport.addEventListener("click", function () {
       handlers.onExport(btnExport.getBoundingClientRect());
     });
@@ -206,6 +246,44 @@
 
     var frameTag = (global.top !== global.self) ? " [iframe]" : "";
 
+    // Double-click inline editor: swaps the row text for an input. Enter
+    // commits through onEditStep (the recorder re-renders), Escape cancels.
+    function editRow(row, txt, i) {
+      var inp = doc.createElement("input");
+      inp.type = "text";
+      inp.value = row.__rfrecEditValue;
+      inp.style.cssText = "flex:1;font:11px monospace;border:1px solid " + ACCENT +
+        ";border-radius:3px;padding:1px 4px;min-width:0;";
+      row.replaceChild(inp, txt);
+      inp.focus(); inp.select();
+      var done = false;
+      function cancel() {
+        if (done) return;
+        done = true;
+        try { row.replaceChild(txt, inp); } catch (e) { /* row already re-rendered */ }
+      }
+      inp.addEventListener("keydown", function (e) {
+        e.stopPropagation();
+        if (e.key === "Enter") { done = true; handlers.onEditStep(i, inp.value); }
+        else if (e.key === "Escape") cancel();
+      });
+      inp.addEventListener("blur", cancel);
+    }
+
+    // Replay row status: "active" (current step), "fail" (stopped here), null.
+    var rowEls = [];
+    function applyRowStatus(row, status) {
+      if (status === "active") {
+        row.style.outline = "2px solid " + ACCENT; row.style.outlineOffset = "-2px";
+        row.style.background = row.__rfrecBg || "";
+      } else if (status === "fail") {
+        row.style.outline = "2px solid " + REC_RED; row.style.outlineOffset = "-2px";
+        row.style.background = "#fdecea";
+      } else {
+        row.style.outline = ""; row.style.background = row.__rfrecBg || "";
+      }
+    }
+
     return {
       root: panel,
       setRecording: function (on) {
@@ -217,25 +295,59 @@
       setHint: function (text) { hint.textContent = text; },
       getTestName: function () { return nameInput.value; },
       setTestName: function (v) { nameInput.value = v; },
-      // step rows: "N. <line>" + strategy chip + up/down/delete
+      // step rows: "N. <line>" + strategy chip + up/down/delete; scenario
+      // markers render as a distinct "— Test: name —" row with delete only.
+      // Double-click any row to edit it inline (value if the step carries
+      // one, else key/name/locator).
       renderSteps: function (steps, lines, recording) {
         title.textContent = (recording ? "Recording" : "Steps") + " — " +
           steps.length + " step(s)" + frameTag;
         list.textContent = "";
+        rowEls = [];
         steps.forEach(function (st, i) {
+          var isMarker = st.type === "test";
           var row = doc.createElement("div");
           row.style.cssText = "display:flex;align-items:center;gap:4px;padding:3px 4px;border-bottom:1px solid #f0f0f0;";
           var txt = doc.createElement("span");
           txt.style.cssText = "flex:1;font:11px monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
-          txt.textContent = (i + 1) + ". " + lines[i];
-          txt.title = lines[i];
+          if (isMarker) {
+            txt.textContent = "— Test: " + (st.name || "?") + " —";
+            txt.style.color = ACCENT; txt.style.fontWeight = "600";
+            row.style.background = "#eef2ff";
+          } else {
+            txt.textContent = (i + 1) + ". " + lines[i];
+            txt.title = lines[i] + " — double-click to edit";
+          }
+          row.__rfrecBg = row.style.background;
+          var editable = ("value" in st) ? st.value
+            : st.type === "press" ? st.key
+            : isMarker ? st.name
+            : st.locator;
+          row.__rfrecEditValue = editable === undefined || editable === null ? "" : String(editable);
+          txt.addEventListener("dblclick", function (e) {
+            e.preventDefault(); e.stopPropagation();
+            editRow(row, txt, i);
+          });
           row.appendChild(txt);
-          if (st.strategy) row.appendChild(strategyChip(st.strategy));
-          row.appendChild(stepBtn("↑", function () { handlers.onMoveStep(i, -1); }));
-          row.appendChild(stepBtn("↓", function () { handlers.onMoveStep(i, 1); }));
+          if (!isMarker) {
+            if (st.strategy) row.appendChild(strategyChip(st.strategy));
+            row.appendChild(stepBtn("↑", function () { handlers.onMoveStep(i, -1); }));
+            row.appendChild(stepBtn("↓", function () { handlers.onMoveStep(i, 1); }));
+          }
           row.appendChild(stepBtn("✕", function () { handlers.onRemoveStep(i); }));
           list.appendChild(row);
+          rowEls.push(row);
         });
+      },
+      // replay feedback: mark row i "active"/"fail" (clears the others);
+      // setRowStatus(-1, null) clears everything.
+      setRowStatus: function (i, status) {
+        for (var j = 0; j < rowEls.length; j++) {
+          applyRowStatus(rowEls[j], j === i ? status : null);
+        }
+        if (status && rowEls[i] && typeof rowEls[i].scrollIntoView === "function") {
+          try { rowEls[i].scrollIntoView({ block: "nearest" }); } catch (e) { /* ignore */ }
+        }
       },
       // capture rows: label + one copy button per candidate strategy
       renderCaptures: function (captures, copyFn) {

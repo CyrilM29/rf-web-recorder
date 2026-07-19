@@ -4,15 +4,19 @@
  * Step model + compaction rules. Pure logic, unit-testable without a DOM.
  *
  * A step is a plain JSON-safe object:
- *   { type, locator?, strategy?, name?, value?, key? }
+ *   { type, locator?, strategy?, name?, css?, value?, key? }
  * Types: click | fill | select | check | uncheck | press | wait-load |
- *        assert-visible | assert-text | assert-value | assert-count | capture
+ *        assert-visible | assert-text | assert-value | assert-count | capture |
+ *        test (scenario marker: { type: "test", name } splits the export into
+ *        multiple test cases)
  *
  * Compaction rules (applied on append, and again by compact()):
  *   - consecutive identical steps are deduped;
  *   - consecutive `fill` steps on the same locator keep only the LAST value
  *     (typing emits many change events — only the final value matters);
- *   - consecutive `wait-load` steps collapse to one.
+ *   - consecutive `wait-load` steps collapse to one;
+ *   - `test` markers pass through untouched, and BREAK the adjacency the
+ *     fill/wait rules rely on (a marker is a scenario boundary).
  */
 (function (global, factory) {
   "use strict";
@@ -36,6 +40,7 @@
   // Appends `step` to `steps` in place, applying the compaction rules.
   // Returns true when the list changed (append or replace), false on drop.
   function addStep(steps, step) {
+    if (step && step.type === "test") { steps.push(step); return true; } // scenario markers always pass through
     var last = steps.length ? steps[steps.length - 1] : null;
     if (isSame(last, step)) return false;                       // consecutive identical: drop
     if (step.type === "fill" && last && last.type === "fill" &&

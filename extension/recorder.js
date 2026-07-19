@@ -1,10 +1,12 @@
 /*
- * rf-web-recorder v0.2.0 — universal Robot Framework Browser-library recorder.
+ * rf-web-recorder v0.3.0 — universal Robot Framework Browser-library recorder.
  *
  * Hover to highlight + click to capture locators; « rec » records your
- * interactions as replayable Browser-library keywords; « export » downloads
- * a .robot suite (or a .resource + .robot pair). Right-click while recording
- * opens the assertion menu. Esc stops. API: window.__RFREC
+ * interactions as replayable Browser-library keywords; « play » replays the
+ * recorded steps in place; « +test » starts a new test case; « export »
+ * downloads a .robot suite (or a .resource + .robot pair) and re-imports
+ * one. Right-click while recording opens the assertion menu; double-click
+ * a step row to edit it. Esc stops. API: window.__RFREC
  *
  * Two ways to run it on any web page:
  *   1. paste this whole file into the DevTools console, or
@@ -320,15 +322,19 @@
  * Step model + compaction rules. Pure logic, unit-testable without a DOM.
  *
  * A step is a plain JSON-safe object:
- *   { type, locator?, strategy?, name?, value?, key? }
+ *   { type, locator?, strategy?, name?, css?, value?, key? }
  * Types: click | fill | select | check | uncheck | press | wait-load |
- *        assert-visible | assert-text | assert-value | assert-count | capture
+ *        assert-visible | assert-text | assert-value | assert-count | capture |
+ *        test (scenario marker: { type: "test", name } splits the export into
+ *        multiple test cases)
  *
  * Compaction rules (applied on append, and again by compact()):
  *   - consecutive identical steps are deduped;
  *   - consecutive `fill` steps on the same locator keep only the LAST value
  *     (typing emits many change events — only the final value matters);
- *   - consecutive `wait-load` steps collapse to one.
+ *   - consecutive `wait-load` steps collapse to one;
+ *   - `test` markers pass through untouched, and BREAK the adjacency the
+ *     fill/wait rules rely on (a marker is a scenario boundary).
  */
 (function (global, factory) {
   "use strict";
@@ -352,6 +358,7 @@
   // Appends `step` to `steps` in place, applying the compaction rules.
   // Returns true when the list changed (append or replace), false on drop.
   function addStep(steps, step) {
+    if (step && step.type === "test") { steps.push(step); return true; } // scenario markers always pass through
     var last = steps.length ? steps[steps.length - 1] : null;
     if (isSame(last, step)) return false;                       // consecutive identical: drop
     if (step.type === "fill" && last && last.type === "fill" &&
@@ -389,6 +396,19 @@
  *       every distinct locator becomes a ${LOC_<N>_<SLUG>} variable + small
  *       action keywords in a .resource file; the .robot test calls only those
  *       keywords (locators never leak into the test — resource-first pattern).
+ *       A step whose recorded CSS-path fallback differs from its winning
+ *       locator additionally gets a ${LOC_<N>_<SLUG>_FALLBACK} variable and an
+ *       IF/ELSE keyword body that falls back to the CSS path (with a WARN log)
+ *       when the primary locator no longer matches.
+ *
+ * `test` marker steps ({ type: "test", name }) split every export shape into
+ * multiple *** Test Cases *** entries; the session bootstrap (New Browser /
+ * New Page) is emitted only in the FIRST test — later tests continue the same
+ * browser session.
+ *
+ * parseSuite(text) is the inverse of buildSuite: it reads an exported .robot
+ * back into { testName, url, steps, skipped } — unparseable lines land in
+ * `skipped`, never silently dropped.
  */
 (function (global, factory) {
   "use strict";
@@ -436,8 +456,34 @@
       case "assert-value": return ["Get Property" + SEP + loc + SEP + "value" + SEP + "==" + SEP + rfEscape(step.value)];
       case "assert-count": return ["Get Element Count" + SEP + loc + SEP + "==" + SEP + rfEscape(step.value)];
       case "capture": return ["Get Element" + SEP + loc];
+      case "test": return ["# --- Test: " + (step.name || "Test") + " ---"]; // scenario marker (comment in a body paste)
       default: return [];
     }
+  }
+
+  // ---- scenario split ------------------------------------------------------
+  // Splits a list on `test` markers into groups. Accepts step objects
+  // ({ type: "test", name }) or precompiled entries ({ marker: name });
+  // anything else lands in the current group. An initial marker (before any
+  // step) NAMES the first scenario instead of leaving an empty bootstrap-only
+  // test behind.
+  function splitScenarios(items) {
+    var groups = [{ name: null, items: [] }];
+    (items || []).forEach(function (it) {
+      var markerName = null;
+      if (it && it.type === "test") markerName = String(it.name || "");
+      else if (it && typeof it === "object" && it.marker !== undefined) markerName = String(it.marker || "");
+      if (markerName !== null) { groups.push({ name: markerName.trim(), items: [] }); return; }
+      groups[groups.length - 1].items.push(it);
+    });
+    if (groups.length > 1 && groups[0].name === null && groups[0].items.length === 0) {
+      groups.shift();
+    }
+    return groups;
+  }
+  function scenarioName(group, index, fallbackFirst) {
+    if (group.name) return group.name;
+    return index === 0 ? fallbackFirst : "Scenario " + (index + 1);
   }
 
   function emitBody(steps) {
@@ -452,7 +498,8 @@
     return (opts && opts.testName ? String(opts.testName) : "").trim() || "Recorded Scenario";
   }
 
-  // Full runnable .robot suite.
+  // Full runnable .robot suite. `test` markers split it into several test
+  // cases; the browser bootstrap runs only in the first one.
   function buildSuite(opts) {
     opts = opts || {};
     var lines = [];
@@ -460,11 +507,18 @@
     lines.push("Library" + SEP + "Browser");
     lines.push("");
     lines.push("*** Test Cases ***");
-    lines.push(testNameOf(opts));
-    lines.push(SEP + "New Browser" + SEP + (opts.browser || "chromium") + SEP + "headless=False");
-    lines.push(SEP + "New Page" + SEP + rfEscape(opts.url || "about:blank"));
-    (opts.steps || []).forEach(function (st) {
-      emitStep(st).forEach(function (l) { lines.push(SEP + l); });
+    var groups = splitScenarios(opts.steps);
+    groups.forEach(function (group, gi) {
+      lines.push(scenarioName(group, gi, testNameOf(opts)));
+      if (gi === 0) {
+        lines.push(SEP + "New Browser" + SEP + (opts.browser || "chromium") + SEP + "headless=False");
+        lines.push(SEP + "New Page" + SEP + rfEscape(opts.url || "about:blank"));
+      } else if (!group.items.length) {
+        lines.push(SEP + "No Operation");        // RF forbids an empty test body
+      }
+      group.items.forEach(function (st) {
+        emitStep(st).forEach(function (l) { lines.push(SEP + l); });
+      });
     });
     return lines.join("\n") + "\n";
   }
@@ -494,12 +548,21 @@
     "assert-count": { name: function (h) { return h + " Count Should Be"; }, arg: true, argName: "expected" },
   };
 
+  // A step deserves a CSS fallback branch when its recorded CSS path exists,
+  // differs from the winning locator, and the winning locator is not itself
+  // the raw CSS path already.
+  function hasCssFallback(step) {
+    return !!(step.css && step.locator && step.css !== step.locator &&
+              step.strategy !== "css-path");
+  }
+
   function buildResourcePair(opts) {
     opts = opts || {};
     var steps = opts.steps || [];
     var resourceName = opts.resourceName || "recorded_keywords.resource";
 
     // 1. distinct locators -> ${LOC_<N>_<SLUG>} variables
+    //    (+ ${LOC_<N>_<SLUG>_FALLBACK} when a distinct CSS path was recorded)
     var varByLocator = {};
     var varOrder = [];
     var n = 0;
@@ -508,7 +571,11 @@
       if (varByLocator[st.locator]) return;
       n++;
       var slug = slugOf(st, "ELEMENT_" + n);
-      varByLocator[st.locator] = { variable: "LOC_" + n + "_" + slug, slug: slug };
+      var entry = { variable: "LOC_" + n + "_" + slug, slug: slug };
+      if (hasCssFallback(st)) {
+        entry.fallback = { variable: "LOC_" + n + "_" + slug + "_FALLBACK", css: st.css };
+      }
+      varByLocator[st.locator] = entry;
       varOrder.push(st.locator);
     });
 
@@ -516,8 +583,9 @@
     var keywords = [];       // { name, lines }
     var keywordByShape = {}; // "<type> <locator>" -> name
     var usedNames = {};
-    var suiteCalls = [];
+    var suiteCalls = [];     // strings, or { marker: name } scenario boundaries
     steps.forEach(function (st) {
+      if (st.type === "test") { suiteCalls.push({ marker: String(st.name || "") }); return; }
       var shape = KEYWORD_SHAPES[st.type];
       if (!shape || !st.locator) {
         emitStep(st).forEach(function (l) { suiteCalls.push(l); });   // press / wait-load stay inline
@@ -541,9 +609,25 @@
         if (shape.arg) body.push(SEP + "[Arguments]" + SEP + argRef);
         // Variable references pass through rfEscape untouched, so emitStep is
         // reused verbatim to build the keyword body.
-        var line = emitStep({ type: st.type, locator: locRef,
-                              value: shape.arg ? argRef : st.value, key: st.key })[0];
-        body.push(SEP + line);
+        function actionLine(ref) {
+          return emitStep({ type: st.type, locator: ref,
+                            value: shape.arg ? argRef : st.value, key: st.key })[0];
+        }
+        if (entry.fallback) {
+          // Self-healing body: try the primary locator, fall back to the
+          // recorded CSS path with a WARN so the drift never goes unnoticed.
+          var fbRef = "${" + entry.fallback.variable + "}";
+          body.push(SEP + "${found}=" + SEP + "Get Element Count" + SEP + locRef);
+          body.push(SEP + "IF" + SEP + "${found} > 0");
+          body.push(SEP + SEP + actionLine(locRef));
+          body.push(SEP + "ELSE");
+          body.push(SEP + SEP + "Log" + SEP +
+                    "Primary locator not found - falling back to the recorded CSS path" + SEP + "WARN");
+          body.push(SEP + SEP + actionLine(fbRef));
+          body.push(SEP + "END");
+        } else {
+          body.push(SEP + actionLine(locRef));
+        }
         keywords.push({ name: kwName, lines: body });
       }
       suiteCalls.push(shape.arg ? kwName + SEP + rfEscape(st.value) : kwName);
@@ -556,7 +640,11 @@
     res.push("");
     res.push("*** Variables ***");
     varOrder.forEach(function (loc) {
-      res.push("${" + varByLocator[loc].variable + "}" + SEP + rfEscape(loc));
+      var entry = varByLocator[loc];
+      res.push("${" + entry.variable + "}" + SEP + rfEscape(loc));
+      if (entry.fallback) {
+        res.push("${" + entry.fallback.variable + "}" + SEP + rfEscape(entry.fallback.css));
+      }
     });
     res.push("");
     res.push("*** Keywords ***");
@@ -565,16 +653,24 @@
       kw.lines.forEach(function (l) { res.push(l); });
     });
 
-    // 4. suite text (locator-free: only resource keywords + session bootstrap)
+    // 4. suite text (locator-free: only resource keywords + session bootstrap;
+    //    markers split it into several tests, bootstrap in the first only)
     var suite = [];
     suite.push("*** Settings ***");
     suite.push("Resource" + SEP + resourceName);
     suite.push("");
     suite.push("*** Test Cases ***");
-    suite.push(testNameOf(opts));
-    suite.push(SEP + "New Browser" + SEP + (opts.browser || "chromium") + SEP + "headless=False");
-    suite.push(SEP + "New Page" + SEP + rfEscape(opts.url || "about:blank"));
-    suiteCalls.forEach(function (c) { suite.push(SEP + c); });
+    var groups = splitScenarios(suiteCalls);
+    groups.forEach(function (group, gi) {
+      suite.push(scenarioName(group, gi, testNameOf(opts)));
+      if (gi === 0) {
+        suite.push(SEP + "New Browser" + SEP + (opts.browser || "chromium") + SEP + "headless=False");
+        suite.push(SEP + "New Page" + SEP + rfEscape(opts.url || "about:blank"));
+      } else if (!group.items.length) {
+        suite.push(SEP + "No Operation");
+      }
+      group.items.forEach(function (c) { suite.push(SEP + c); });
+    });
 
     return {
       resource: res.join("\n") + "\n",
@@ -583,12 +679,118 @@
     };
   }
 
+  // ---- .robot re-import (inverse of buildSuite) ----------------------------
+  // Undoes rfEscape on a single argument token.
+  function rfUnescape(token) {
+    if (token === "${EMPTY}") return "";
+    var out = "";
+    for (var i = 0; i < token.length; i++) {
+      var ch = token.charAt(i);
+      if (ch === "\\" && i + 1 < token.length) {
+        var next = token.charAt(i + 1);
+        if (next === "n") { out += "\n"; i++; continue; }
+        if (next === "r") { out += "\r"; i++; continue; }
+        if (next === "t") { out += "\t"; i++; continue; }
+        out += next; i++; continue;      // \\  \<space>  \#  and any other escape
+      }
+      out += ch;
+    }
+    return out;
+  }
+
+  // One tokenized body line -> step object, or null when not a recorder step.
+  function parseStepLine(tokens) {
+    var kw = tokens[0];
+    var a = tokens.slice(1);
+    function arg(i) { return rfUnescape(a[i] === undefined ? "" : a[i]); }
+    switch (kw) {
+      case "Click": if (a.length === 1) return { type: "click", locator: arg(0) }; break;
+      case "Fill Text": if (a.length === 2) return { type: "fill", locator: arg(0), value: arg(1) }; break;
+      case "Select Options By":
+        if (a.length === 3 && a[1] === "label") return { type: "select", locator: arg(0), value: arg(2) };
+        break;
+      case "Check Checkbox": if (a.length === 1) return { type: "check", locator: arg(0) }; break;
+      case "Uncheck Checkbox": if (a.length === 1) return { type: "uncheck", locator: arg(0) }; break;
+      case "Keyboard Key": if (a.length === 2 && a[0] === "press") return { type: "press", key: arg(1) }; break;
+      case "Wait For Load State": if (a.length <= 1) return { type: "wait-load" }; break;
+      case "Get Element States":
+        if (a.length === 3 && a[1] === "contains" && a[2] === "visible") {
+          return { type: "assert-visible", locator: arg(0) };
+        }
+        break;
+      case "Get Text":
+        if (a.length === 3 && a[1] === "==") return { type: "assert-text", locator: arg(0), value: arg(2) };
+        break;
+      case "Get Property":
+        if (a.length === 4 && a[1] === "value" && a[2] === "==") {
+          return { type: "assert-value", locator: arg(0), value: arg(3) };
+        }
+        break;
+      case "Get Element Count":
+        if (a.length === 3 && a[1] === "==") {
+          var raw = arg(2);
+          return { type: "assert-count", locator: arg(0),
+                   value: /^\d+$/.test(raw) ? Number(raw) : raw };
+        }
+        break;
+      case "Get Element": if (a.length === 1) return { type: "capture", locator: arg(0) }; break;
+    }
+    return null;
+  }
+
+  // Parses a Browser-library .robot text back into recorder steps.
+  // Returns { testName, url, steps, skipped }:
+  //   - only the *** Test Cases *** section is read (Settings/Keywords/
+  //     Variables are structure, not steps);
+  //   - the New Browser / New Page bootstrap and No Operation placeholders
+  //     are recognized and dropped (New Page still yields `url`);
+  //   - the first test-case name becomes testName, every further one becomes
+  //     a { type: "test", name } marker;
+  //   - anything else unparseable lands in `skipped` — never silently dropped.
+  function parseSuite(text) {
+    var lines = String(text || "").split(/\r?\n/);
+    var section = "";
+    var steps = [];
+    var skipped = [];
+    var testName = null;
+    var url = null;
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+      if (!line.trim()) continue;
+      var header = /^\*{3}\s*([^*]+?)\s*\*{3}/.exec(line);
+      if (header) { section = header[1].toLowerCase(); continue; }
+      if (section !== "test cases") continue;
+      if (!/^\s/.test(line)) {                       // unindented: a test-case name
+        if (testName === null) testName = line.trim();
+        else steps.push({ type: "test", name: line.trim() });
+        continue;
+      }
+      var body = line.replace(/^\s+/, "");
+      if (body.charAt(0) === "#") continue;          // comments carry no step
+      var tokens = body.split(/ {2,}/);
+      if (tokens[0] === "New Browser") continue;     // bootstrap: re-added on export
+      if (tokens[0] === "New Page") {
+        if (url === null && tokens[1] !== undefined) url = rfUnescape(tokens[1]);
+        continue;
+      }
+      if (tokens[0] === "No Operation" && tokens.length === 1) continue; // empty-scenario placeholder
+      var step = parseStepLine(tokens);
+      if (step) steps.push(step);
+      else skipped.push(body);
+    }
+    return { testName: testName || "", url: url || "", steps: steps, skipped: skipped };
+  }
+
   return {
     rfEscape: rfEscape,
+    rfUnescape: rfUnescape,
     emitStep: emitStep,
     emitBody: emitBody,
+    splitScenarios: splitScenarios,
+    scenarioName: scenarioName,
     buildSuite: buildSuite,
     buildResourcePair: buildResourcePair,
+    parseSuite: parseSuite,
   };
 });
 
@@ -645,6 +847,9 @@
   // One step -> one SeleniumLibrary keyword line (or a comment, never a loss).
   function emitStep(step) {
     if (!step) return [];
+    if (step.type === "test") {
+      return ["# --- Test: " + (step.name || "Test") + " ---"];  // scenario marker (comment in a body paste)
+    }
     if (step.type === "press") {
       var key = KEY_NAMES[step.key] || String(step.key || "").toUpperCase();
       return ["Press Keys" + SEP + "None" + SEP + rfEscape(key)];
@@ -687,7 +892,9 @@
     return (opts && opts.testName ? String(opts.testName) : "").trim() || "Recorded Scenario";
   }
 
-  // Full runnable .robot suite (SeleniumLibrary session bootstrap).
+  // Full runnable .robot suite (SeleniumLibrary session bootstrap). `test`
+  // markers split it into several test cases; Open Browser runs only in the
+  // first one — later tests continue the same session.
   function buildSuite(opts) {
     opts = opts || {};
     var lines = [];
@@ -695,11 +902,18 @@
     lines.push("Library" + SEP + "SeleniumLibrary");
     lines.push("");
     lines.push("*** Test Cases ***");
-    lines.push(testNameOf(opts));
-    lines.push(SEP + "Open Browser" + SEP + rfEscape(opts.url || "about:blank") + SEP +
-               (opts.seleniumBrowser || "Chrome"));
-    (opts.steps || []).forEach(function (st) {
-      emitStep(st).forEach(function (l) { lines.push(SEP + l); });
+    var groups = base.splitScenarios(opts.steps);
+    groups.forEach(function (group, gi) {
+      lines.push(base.scenarioName(group, gi, testNameOf(opts)));
+      if (gi === 0) {
+        lines.push(SEP + "Open Browser" + SEP + rfEscape(opts.url || "about:blank") + SEP +
+                   (opts.seleniumBrowser || "Chrome"));
+      } else if (!group.items.length) {
+        lines.push(SEP + "No Operation");        // RF forbids an empty test body
+      }
+      group.items.forEach(function (st) {
+        emitStep(st).forEach(function (l) { lines.push(SEP + l); });
+      });
     });
     return lines.join("\n") + "\n";
   }
@@ -751,8 +965,9 @@
     var keywords = [];
     var keywordByShape = {};
     var usedNames = {};
-    var suiteCalls = [];
+    var suiteCalls = [];     // strings, or { marker: name } scenario boundaries
     steps.forEach(function (st) {
+      if (st.type === "test") { suiteCalls.push({ marker: String(st.name || "") }); return; }
       var shape = KEYWORD_SHAPES[st.type];
       var loc = toSeleniumLocator(st);
       if (!shape || !loc) {
@@ -801,16 +1016,24 @@
       kw.lines.forEach(function (l) { res.push(l); });
     });
 
-    // 4. suite text (locator-free)
+    // 4. suite text (locator-free; markers split it into several tests,
+    //    the Open Browser bootstrap in the first only)
     var suite = [];
     suite.push("*** Settings ***");
     suite.push("Resource" + SEP + resourceName);
     suite.push("");
     suite.push("*** Test Cases ***");
-    suite.push(testNameOf(opts));
-    suite.push(SEP + "Open Browser" + SEP + rfEscape(opts.url || "about:blank") + SEP +
-               (opts.seleniumBrowser || "Chrome"));
-    suiteCalls.forEach(function (c) { suite.push(SEP + c); });
+    var groups = base.splitScenarios(suiteCalls);
+    groups.forEach(function (group, gi) {
+      suite.push(base.scenarioName(group, gi, testNameOf(opts)));
+      if (gi === 0) {
+        suite.push(SEP + "Open Browser" + SEP + rfEscape(opts.url || "about:blank") + SEP +
+                   (opts.seleniumBrowser || "Chrome"));
+      } else if (!group.items.length) {
+        suite.push(SEP + "No Operation");
+      }
+      group.items.forEach(function (c) { suite.push(SEP + c); });
+    });
 
     return {
       resource: res.join("\n") + "\n",
@@ -828,14 +1051,222 @@
   };
 });
 
+// ---- src/core/resolve.js -------------------------------------------------
+/*
+ * rf-web-recorder — core/resolve.js
+ *
+ * The INVERSE of locator generation: resolve a recorded selector back to the
+ * matching element(s) so recorded steps can be REPLAYED in place, plus the
+ * pure step -> action planning and assertion evaluation the replayer runs on.
+ *
+ * Selector forms understood (exactly what locators.js emits):
+ *   id=X                    -> getElementById, or a children-walk fallback
+ *   role=<role>[name="…"]   -> full scan matching ariaRole() + accName()
+ *   text="…"                -> full scan matching collapsed text content
+ *   [attr="…"]              -> querySelector, or an attribute-walk fallback
+ *   anything else (CSS)     -> querySelector (guarded; null when absent)
+ *
+ * Pure logic, duck-typed like the rest of core: works against any object
+ * shaped like a document/element. Fake docs without querySelector fall back
+ * to a children walk for every scannable form — only raw CSS paths genuinely
+ * need a CSS engine.
+ */
+(function (global, factory) {
+  "use strict";
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = factory(require("./locators.js"));
+  } else {
+    var core = global.__RFREC_CORE = global.__RFREC_CORE || {};
+    core.resolve = factory(core.locators);
+  }
+})(typeof globalThis !== "undefined" ? globalThis : this, function (locators) {
+  "use strict";
+
+  var collapse = locators.collapse;
+
+  // ---- duck-typed document scan (mirror of locators.js allElements) --------
+  function allElements(doc) {
+    if (doc && typeof doc.querySelectorAll === "function") {
+      try { return Array.prototype.slice.call(doc.querySelectorAll("*")); } catch (e) { /* fall through */ }
+    }
+    var out = [];
+    function walk(n) {
+      if (!n) return;
+      out.push(n);
+      var kids = n.children || [];
+      for (var i = 0; i < kids.length; i++) walk(kids[i]);
+    }
+    if (doc && doc.body) walk(doc.body);
+    return out;
+  }
+  function attrOf(el, name) {
+    try {
+      if (el && typeof el.getAttribute === "function") {
+        var v = el.getAttribute(name);
+        return v === null || v === undefined ? "" : String(v);
+      }
+    } catch (e) { /* ignore */ }
+    return "";
+  }
+  function unescapeQuoted(s) { return String(s).replace(/\\(.)/g, "$1"); }
+
+  // ---- selector parsing (inverse of locators.js candidate selectors) ------
+  function parseLocator(locator) {
+    var loc = String(locator === undefined || locator === null ? "" : locator);
+    var m = /^id=(.+)$/.exec(loc);
+    if (m) return { kind: "id", id: m[1] };
+    m = /^role=([\w-]+)\[name="((?:\\.|[^"\\])*)"\]$/.exec(loc);
+    if (m) return { kind: "role", role: m[1].toLowerCase(), name: unescapeQuoted(m[2]) };
+    m = /^text="((?:\\.|[^"\\])*)"$/.exec(loc);
+    if (m) return { kind: "text", text: unescapeQuoted(m[1]) };
+    m = /^\[([A-Za-z][\w-]*)="((?:\\.|[^"\\])*)"\]$/.exec(loc);
+    if (m) return { kind: "attr", attribute: m[1], value: unescapeQuoted(m[2]) };
+    return { kind: "css", css: loc };
+  }
+
+  function matchesParsed(el, parsed, doc) {
+    switch (parsed.kind) {
+      case "id": return String((el && el.id) || "") === parsed.id;
+      case "role":
+        return locators.ariaRole(el) === parsed.role && locators.accName(el, doc) === parsed.name;
+      case "text":
+        return collapse(el && el.textContent !== undefined && el.textContent !== null ? el.textContent : "") === parsed.text;
+      case "attr": return attrOf(el, parsed.attribute) === parsed.value;
+      default: return false;
+    }
+  }
+
+  // All elements matching the locator, in document order. Raw CSS needs a
+  // real querySelectorAll; every other form falls back to a children walk.
+  function queryAll(locator, doc) {
+    var parsed = parseLocator(locator);
+    if (parsed.kind === "css" || parsed.kind === "attr") {
+      if (doc && typeof doc.querySelectorAll === "function") {
+        try {
+          var sel = parsed.kind === "attr"
+            ? "[" + parsed.attribute + '="' + parsed.value.replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"]'
+            : parsed.css;
+          return Array.prototype.slice.call(doc.querySelectorAll(sel));
+        } catch (e) { /* invalid selector or exotic host: fall through */ }
+      }
+      if (parsed.kind === "css") return [];       // no CSS engine on this doc
+    }
+    if (parsed.kind === "id" && doc && typeof doc.getElementById === "function") {
+      try {
+        var byId = doc.getElementById(parsed.id);
+        return byId ? [byId] : [];
+      } catch (e) { /* fall through to the walk */ }
+    }
+    var els = allElements(doc);
+    var out = [];
+    for (var i = 0; i < els.length; i++) {
+      if (matchesParsed(els[i], parsed, doc)) out.push(els[i]);
+    }
+    return out;
+  }
+
+  function resolveSelector(locator, doc) {
+    var found = queryAll(locator, doc);
+    return found.length ? found[0] : null;
+  }
+  function countSelector(locator, doc) { return queryAll(locator, doc).length; }
+
+  // ---- step -> replay action descriptor (pure) -----------------------------
+  function planStep(step) {
+    if (!step) return { action: "noop" };
+    switch (step.type) {
+      case "test": return { action: "marker", name: step.name || "" };
+      case "wait-load": return { action: "wait", ms: 300 };
+      case "press": return { action: "press", key: step.key === undefined ? "" : String(step.key) };
+      case "click": return { action: "click", locator: step.locator };
+      case "fill":
+        return { action: "fill", locator: step.locator,
+                 value: step.value === undefined || step.value === null ? "" : String(step.value) };
+      case "select":
+        return { action: "select", locator: step.locator,
+                 label: step.value === undefined || step.value === null ? "" : String(step.value) };
+      case "check": return { action: "setChecked", locator: step.locator, checked: true };
+      case "uncheck": return { action: "setChecked", locator: step.locator, checked: false };
+      case "assert-visible": case "assert-text": case "assert-value":
+      case "assert-count": case "capture":
+        return { action: "assert", kind: step.type, locator: step.locator };
+      default: return { action: "noop" };
+    }
+  }
+
+  // ---- assertion evaluation (pure given a doc) -----------------------------
+  // Returns { ok, reason?, element? } — the element travels back so the
+  // replayer can highlight what it checked.
+  function evalAssertion(step, doc) {
+    var loc = step && step.locator;
+    if (step && step.type === "assert-count") {
+      var n = countSelector(loc, doc);
+      var want = Number(step.value);
+      if (n === want) return { ok: true };
+      return { ok: false, reason: "count is " + n + ", expected " + want + " for " + loc };
+    }
+    var el = resolveSelector(loc, doc);
+    if (!el) return { ok: false, reason: "element not found: " + loc };
+    switch (step.type) {
+      case "capture":
+        return { ok: true, element: el };
+      case "assert-visible": {
+        var rect = null;
+        try {
+          if (typeof el.getBoundingClientRect === "function") rect = el.getBoundingClientRect();
+        } catch (e) { /* detached */ }
+        if (rect && (!rect.width || !rect.height)) {
+          return { ok: false, reason: "element has a zero-size box: " + loc, element: el };
+        }
+        return { ok: true, element: el };
+      }
+      case "assert-text": {
+        var text = collapse(el.textContent !== undefined && el.textContent !== null ? el.textContent : "");
+        if (text === String(step.value)) return { ok: true, element: el };
+        return { ok: false, reason: 'text is "' + text + '", expected "' + step.value + '"', element: el };
+      }
+      case "assert-value": {
+        var value = el.value === undefined || el.value === null ? "" : String(el.value);
+        if (value === String(step.value)) return { ok: true, element: el };
+        return { ok: false, reason: 'value is "' + value + '", expected "' + step.value + '"', element: el };
+      }
+      default:
+        return { ok: false, reason: "unsupported assertion: " + (step && step.type) };
+    }
+  }
+
+  // ---- <select> replay helper: option index by label -----------------------
+  function findOptionIndex(selectEl, label) {
+    var options = (selectEl && selectEl.options) || [];
+    var want = collapse(label === undefined || label === null ? "" : label);
+    for (var i = 0; i < options.length; i++) {
+      var opt = options[i];
+      var lab = opt && opt.label !== undefined && opt.label !== null ? collapse(String(opt.label)) : "";
+      if (!lab) lab = collapse(opt && opt.textContent !== undefined && opt.textContent !== null ? opt.textContent : "");
+      if (lab === want) return i;
+    }
+    return -1;
+  }
+
+  return {
+    parseLocator: parseLocator,
+    resolveSelector: resolveSelector,
+    countSelector: countSelector,
+    planStep: planStep,
+    evalAssertion: evalAssertion,
+    findOptionIndex: findOptionIndex,
+  };
+});
+
 // ---- src/panel/panel.js --------------------------------------------------
 /*
  * rf-web-recorder — panel/panel.js
  *
- * Floating in-page UI: draggable/collapsible panel with rec/export/clear/stop
- * buttons, an editable test name, the ordered step list (move up/down, delete),
- * a hover highlight overlay, and a small floating menu used both for the
- * export-format picker and the right-click assertion menu.
+ * Floating in-page UI: draggable/collapsible panel with rec/play/+test/export/
+ * clear/stop buttons, an editable test name, the ordered step list (move
+ * up/down, delete, double-click inline edit, scenario-marker rows, replay row
+ * status), a hover highlight overlay, and a small floating menu used both for
+ * the export-format picker and the right-click assertion menu.
  *
  * Browser-only (touches the DOM). Ported from the author's SAPFX recorder
  * panel (Apache-2.0) and generalized — see NOTICE.
@@ -928,8 +1359,9 @@
   }
 
   // ---- main panel ----------------------------------------------------------
-  // handlers: onToggleRec(), onExport(anchorRect), onClear(), onStop(),
-  //           onMoveStep(i, delta), onRemoveStep(i), onNameInput(value)
+  // handlers: onToggleRec(), onPlay(), onAddTest(name), onExport(anchorRect),
+  //           onClear(), onStop(), onMoveStep(i, delta), onRemoveStep(i),
+  //           onEditStep(i, text), onNameInput(value)
   function createPanel(doc, handlers) {
     var panel = doc.createElement("div");
     panel.id = "__rfrecPanel";
@@ -939,7 +1371,7 @@
       "font:12px/1.45 -apple-system,Segoe UI,sans-serif;color:#222;overflow:hidden;";
 
     var head = doc.createElement("div");
-    head.style.cssText = "display:flex;align-items:center;gap:8px;padding:8px 10px;" +
+    head.style.cssText = "display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:8px 10px;" +
       "background:" + ACCENT + ";color:#fff;font-weight:600;cursor:move;";
     var dot = doc.createElement("span");   // blinking recording indicator
     dot.style.cssText = "width:9px;height:9px;border-radius:50%;background:" + REC_RED +
@@ -947,19 +1379,24 @@
     var title = doc.createElement("span"); title.style.flex = "1";
     var btnCollapse = doc.createElement("button");
     var btnRec = doc.createElement("button");
+    var btnPlay = doc.createElement("button");
+    var btnAddTest = doc.createElement("button");
     var btnExport = doc.createElement("button");
     var btnClear = doc.createElement("button");
     var btnClose = doc.createElement("button");
-    [btnCollapse, btnRec, btnExport, btnClear, btnClose].forEach(function (b) {
+    [btnCollapse, btnRec, btnPlay, btnAddTest, btnExport, btnClear, btnClose].forEach(function (b) {
       b.style.cssText = "border:1px solid #fff;background:transparent;color:#fff;" +
-        "border-radius:4px;cursor:pointer;font:11px monospace;padding:2px 8px;";
+        "border-radius:4px;cursor:pointer;font:11px monospace;padding:2px 6px;";
     });
     btnCollapse.textContent = "▾";  // expanded marker
-    btnRec.textContent = "rec"; btnExport.textContent = "export";
+    btnRec.textContent = "rec"; btnPlay.textContent = "play";
+    btnAddTest.textContent = "+test"; btnExport.textContent = "export";
     btnClear.textContent = "clear"; btnClose.textContent = "stop";
+    btnPlay.title = "Replay the recorded steps on this page";
+    btnAddTest.title = "Start a new test case (scenario marker)";
     head.appendChild(dot); head.appendChild(title); head.appendChild(btnCollapse);
-    head.appendChild(btnRec); head.appendChild(btnExport);
-    head.appendChild(btnClear); head.appendChild(btnClose);
+    head.appendChild(btnRec); head.appendChild(btnPlay); head.appendChild(btnAddTest);
+    head.appendChild(btnExport); head.appendChild(btnClear); head.appendChild(btnClose);
 
     var nameRow = doc.createElement("div");
     nameRow.style.cssText = "display:flex;align-items:center;gap:6px;padding:4px 10px;border-bottom:1px solid #eee;";
@@ -976,6 +1413,37 @@
     hint.style.cssText = "padding:6px 10px;color:#666;border-top:1px solid #eee;";
     panel.appendChild(head); panel.appendChild(nameRow); panel.appendChild(list); panel.appendChild(hint);
     doc.documentElement.appendChild(panel);
+
+    // +test inline prompt: a temporary one-line input above the step list;
+    // Enter commits the next scenario's name, Escape cancels.
+    var scenarioRow = null;
+    function promptScenario() {
+      if (scenarioRow) {
+        var existing = scenarioRow.lastChild;
+        if (existing && existing.focus) existing.focus();
+        return;
+      }
+      scenarioRow = doc.createElement("div");
+      scenarioRow.style.cssText = "display:flex;align-items:center;gap:6px;padding:4px 10px;border-bottom:1px solid #eee;";
+      var lbl = doc.createElement("span");
+      lbl.textContent = "New test:"; lbl.style.color = "#666";
+      var inp = doc.createElement("input");
+      inp.type = "text";
+      inp.placeholder = "next scenario name (Enter = add, Esc = cancel)";
+      inp.style.cssText = "flex:1;font:11px monospace;border:1px solid " + ACCENT + ";border-radius:3px;padding:2px 5px;";
+      function closePrompt() { if (scenarioRow) { scenarioRow.remove(); scenarioRow = null; } }
+      inp.addEventListener("keydown", function (e) {
+        e.stopPropagation();
+        if (e.key === "Enter") {
+          var name = inp.value.trim();
+          closePrompt();
+          if (name) handlers.onAddTest(name);
+        } else if (e.key === "Escape") { closePrompt(); }
+      });
+      scenarioRow.appendChild(lbl); scenarioRow.appendChild(inp);
+      panel.insertBefore(scenarioRow, list);
+      inp.focus();
+    }
 
     var styleEl = doc.createElement("style");
     styleEl.textContent = "@keyframes __rfrecBlink{50%{opacity:.25}}";
@@ -1013,6 +1481,8 @@
     doc.addEventListener("mouseup", onDragUp, true);
 
     btnRec.addEventListener("click", function () { handlers.onToggleRec(); });
+    btnPlay.addEventListener("click", function () { handlers.onPlay(); });
+    btnAddTest.addEventListener("click", function () { promptScenario(); });
     btnExport.addEventListener("click", function () {
       handlers.onExport(btnExport.getBoundingClientRect());
     });
@@ -1037,6 +1507,44 @@
 
     var frameTag = (global.top !== global.self) ? " [iframe]" : "";
 
+    // Double-click inline editor: swaps the row text for an input. Enter
+    // commits through onEditStep (the recorder re-renders), Escape cancels.
+    function editRow(row, txt, i) {
+      var inp = doc.createElement("input");
+      inp.type = "text";
+      inp.value = row.__rfrecEditValue;
+      inp.style.cssText = "flex:1;font:11px monospace;border:1px solid " + ACCENT +
+        ";border-radius:3px;padding:1px 4px;min-width:0;";
+      row.replaceChild(inp, txt);
+      inp.focus(); inp.select();
+      var done = false;
+      function cancel() {
+        if (done) return;
+        done = true;
+        try { row.replaceChild(txt, inp); } catch (e) { /* row already re-rendered */ }
+      }
+      inp.addEventListener("keydown", function (e) {
+        e.stopPropagation();
+        if (e.key === "Enter") { done = true; handlers.onEditStep(i, inp.value); }
+        else if (e.key === "Escape") cancel();
+      });
+      inp.addEventListener("blur", cancel);
+    }
+
+    // Replay row status: "active" (current step), "fail" (stopped here), null.
+    var rowEls = [];
+    function applyRowStatus(row, status) {
+      if (status === "active") {
+        row.style.outline = "2px solid " + ACCENT; row.style.outlineOffset = "-2px";
+        row.style.background = row.__rfrecBg || "";
+      } else if (status === "fail") {
+        row.style.outline = "2px solid " + REC_RED; row.style.outlineOffset = "-2px";
+        row.style.background = "#fdecea";
+      } else {
+        row.style.outline = ""; row.style.background = row.__rfrecBg || "";
+      }
+    }
+
     return {
       root: panel,
       setRecording: function (on) {
@@ -1048,25 +1556,59 @@
       setHint: function (text) { hint.textContent = text; },
       getTestName: function () { return nameInput.value; },
       setTestName: function (v) { nameInput.value = v; },
-      // step rows: "N. <line>" + strategy chip + up/down/delete
+      // step rows: "N. <line>" + strategy chip + up/down/delete; scenario
+      // markers render as a distinct "— Test: name —" row with delete only.
+      // Double-click any row to edit it inline (value if the step carries
+      // one, else key/name/locator).
       renderSteps: function (steps, lines, recording) {
         title.textContent = (recording ? "Recording" : "Steps") + " — " +
           steps.length + " step(s)" + frameTag;
         list.textContent = "";
+        rowEls = [];
         steps.forEach(function (st, i) {
+          var isMarker = st.type === "test";
           var row = doc.createElement("div");
           row.style.cssText = "display:flex;align-items:center;gap:4px;padding:3px 4px;border-bottom:1px solid #f0f0f0;";
           var txt = doc.createElement("span");
           txt.style.cssText = "flex:1;font:11px monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
-          txt.textContent = (i + 1) + ". " + lines[i];
-          txt.title = lines[i];
+          if (isMarker) {
+            txt.textContent = "— Test: " + (st.name || "?") + " —";
+            txt.style.color = ACCENT; txt.style.fontWeight = "600";
+            row.style.background = "#eef2ff";
+          } else {
+            txt.textContent = (i + 1) + ". " + lines[i];
+            txt.title = lines[i] + " — double-click to edit";
+          }
+          row.__rfrecBg = row.style.background;
+          var editable = ("value" in st) ? st.value
+            : st.type === "press" ? st.key
+            : isMarker ? st.name
+            : st.locator;
+          row.__rfrecEditValue = editable === undefined || editable === null ? "" : String(editable);
+          txt.addEventListener("dblclick", function (e) {
+            e.preventDefault(); e.stopPropagation();
+            editRow(row, txt, i);
+          });
           row.appendChild(txt);
-          if (st.strategy) row.appendChild(strategyChip(st.strategy));
-          row.appendChild(stepBtn("↑", function () { handlers.onMoveStep(i, -1); }));
-          row.appendChild(stepBtn("↓", function () { handlers.onMoveStep(i, 1); }));
+          if (!isMarker) {
+            if (st.strategy) row.appendChild(strategyChip(st.strategy));
+            row.appendChild(stepBtn("↑", function () { handlers.onMoveStep(i, -1); }));
+            row.appendChild(stepBtn("↓", function () { handlers.onMoveStep(i, 1); }));
+          }
           row.appendChild(stepBtn("✕", function () { handlers.onRemoveStep(i); }));
           list.appendChild(row);
+          rowEls.push(row);
         });
+      },
+      // replay feedback: mark row i "active"/"fail" (clears the others);
+      // setRowStatus(-1, null) clears everything.
+      setRowStatus: function (i, status) {
+        for (var j = 0; j < rowEls.length; j++) {
+          applyRowStatus(rowEls[j], j === i ? status : null);
+        }
+        if (status && rowEls[i] && typeof rowEls[i].scrollIntoView === "function") {
+          try { rowEls[i].scrollIntoView({ block: "nearest" }); } catch (e) { /* ignore */ }
+        }
       },
       // capture rows: label + one copy button per candidate strategy
       renderCaptures: function (captures, copyFn) {
@@ -1112,8 +1654,9 @@
 /*
  * rf-web-recorder — recorder.js
  *
- * Event wiring: capture + record modes, hover highlight, right-click assertion
- * menu, sessionStorage persistence, export (3 formats). Browser-only.
+ * Event wiring: capture + record modes, in-panel replay, hover highlight,
+ * right-click assertion menu, sessionStorage persistence, export + .robot
+ * re-import. Browser-only.
  *
  * Capture mode (default): hover highlights the element and shows its best
  * locator; a click copies a `Get Element    <locator>` line and lists the
@@ -1136,17 +1679,21 @@
   var NAME_KEY = "__rfrecName";
   var URL_KEY = "__rfrecUrl";
   var DEFAULT_NAME = "Recorded Scenario";
-  var HINT_CAPTURE = "Hover + click to capture a locator. rec to record. Esc to stop.";
+  var REPLAY_DELAY = 350;   // ms between replayed steps
+  var HINT_CAPTURE = "Hover + click to capture a locator. rec to record, play to replay. Esc to stop.";
   var HINT_RECORD = "Recording: clicks and typed values become steps. " +
-    "Right-click an element for assertions. export offers Browser / SeleniumLibrary formats.";
+    "Right-click an element for assertions. +test starts a new test case. " +
+    "export offers Browser / SeleniumLibrary formats.";
 
   function createRecorder() {
     var locators = CORE.locators, stepsCore = CORE.steps, emit = CORE.emit,
-        emitSelenium = CORE.emitSelenium, ui = CORE.panel;
+        emitSelenium = CORE.emitSelenium, resolveCore = CORE.resolve, ui = CORE.panel;
     var doc = global.document;
 
     var running = false;
     var recording = false;
+    var replaying = false;   // replay in progress: its synthetic events are never recorded
+    var playTimer = 0;
     var captures = [];
     var steps = [];
     var panel = null, overlay = null, menu = null;
@@ -1247,10 +1794,14 @@
       overlay.show({ left: r.left, top: r.top, width: r.width, height: r.height },
         "[" + first.strategy + "] " + first.selector);
     }
-    function onMove(event) { lastEvt = event; if (!raf) raf = global.requestAnimationFrame(paint); }
+    function onMove(event) {
+      if (replaying) return;                          // keep the replay highlight stable
+      lastEvt = event; if (!raf) raf = global.requestAnimationFrame(paint);
+    }
 
     // ---- click: capture (inspect) or record (step) -------------------------
     function onClick(event) {
+      if (replaying) return;                          // never record replayed events
       if (inOurUI(event.target)) return;              // panel/menu handle their own clicks
       if (menu && menu.isOpen()) { menu.close(); return; }
       var target = event.target && event.target.nodeType === 1 ? event.target : null;
@@ -1275,6 +1826,7 @@
 
     // ---- change: fills, selects, checkboxes --------------------------------
     function onChange(event) {
+      if (replaying) return;                          // never record replayed events
       if (!recording || inOurUI(event.target)) return;
       var t = event.target;
       if (!t || t.nodeType !== 1) return;
@@ -1309,8 +1861,14 @@
 
     // ---- keydown: Enter/Tab presses, Escape stops --------------------------
     function onKey(event) {
+      if (replaying) {                                // never record replayed events
+        if (event.key === "Escape") cancelReplay("Replay cancelled.");
+        return;
+      }
       if (event.key === "Escape") {
         if (menu && menu.isOpen()) return;            // menu's own Escape closes it first
+        var t = event.target;
+        if (inOurUI(t) && t && t.tagName === "INPUT") return; // inline editors handle their own Escape
         stop();
         return;
       }
@@ -1330,6 +1888,7 @@
       return 1;
     }
     function onContextMenu(event) {
+      if (replaying) return;
       if (!recording || inOurUI(event.target)) return; // default context menu outside record mode
       var target = event.target && event.target.nodeType === 1 ? event.target : null;
       if (!target) return;
@@ -1353,8 +1912,127 @@
     }
 
     // ---- navigation -> replayable wait -------------------------------------
-    function onNav() { if (recording) addStep({ type: "wait-load" }); }
-    function onBeforeUnload() { if (recording) { stepsCore.addStep(steps, { type: "wait-load" }); saveSteps(); } }
+    function onNav() { if (recording && !replaying) addStep({ type: "wait-load" }); }
+    function onBeforeUnload() { if (recording && !replaying) { stepsCore.addStep(steps, { type: "wait-load" }); saveSteps(); } }
+
+    // ---- in-panel replay ---------------------------------------------------
+    // Steps replay sequentially (REPLAY_DELAY ms apart) against the live DOM:
+    // synthetic events for actions, resolve.evalAssertion for assertions.
+    // A failure stops the run, marks the row red and names the reason.
+    function synthMouse(el, type) {
+      var ev;
+      try { ev = new MouseEvent(type, { bubbles: true, cancelable: true, view: global }); }
+      catch (e) { ev = doc.createEvent("MouseEvents"); ev.initEvent(type, true, true); }
+      el.dispatchEvent(ev);
+    }
+    function synthEvent(el, type) {
+      var ev;
+      try { ev = new Event(type, { bubbles: true }); }
+      catch (e) { ev = doc.createEvent("HTMLEvents"); ev.initEvent(type, true, false); }
+      el.dispatchEvent(ev);
+    }
+    function synthKey(el, type, key) {
+      var ev;
+      try { ev = new KeyboardEvent(type, { bubbles: true, cancelable: true, key: key }); }
+      catch (e) { ev = doc.createEvent("Events"); ev.initEvent(type, true, true); ev.key = key; }
+      el.dispatchEvent(ev);
+    }
+    function highlightElement(el, label) {
+      if (!overlay || !el || typeof el.getBoundingClientRect !== "function") return;
+      try {
+        var r = el.getBoundingClientRect();
+        overlay.show({ left: r.left, top: r.top, width: r.width, height: r.height }, label);
+        overlay.flash();
+      } catch (e) { /* detached */ }
+    }
+    // One planned step against the live DOM. Returns { ok, reason? } or "skip".
+    function runPlanned(st, plan) {
+      switch (plan.action) {
+        case "marker": case "noop": return "skip";
+        case "wait": return { ok: true };            // the pause IS the step (see next())
+        case "press": {
+          var target = doc.activeElement || doc.body;
+          synthKey(target, "keydown", plan.key);
+          synthKey(target, "keyup", plan.key);
+          return { ok: true };
+        }
+        case "assert": {
+          var res = resolveCore.evalAssertion(st, doc);
+          if (res.element) highlightElement(res.element, stepLine(st));
+          return res.ok ? { ok: true } : { ok: false, reason: res.reason };
+        }
+      }
+      var el = resolveCore.resolveSelector(st.locator, doc);
+      if (!el) return { ok: false, reason: "element not found: " + st.locator };
+      highlightElement(el, stepLine(st));
+      switch (plan.action) {
+        case "click":
+          synthMouse(el, "mousedown"); synthMouse(el, "mouseup"); synthMouse(el, "click");
+          break;
+        case "fill":
+          el.value = plan.value;
+          synthEvent(el, "input"); synthEvent(el, "change");
+          break;
+        case "select": {
+          var oi = resolveCore.findOptionIndex(el, plan.label);
+          if (oi < 0) return { ok: false, reason: 'no option labelled "' + plan.label + '" in ' + st.locator };
+          el.selectedIndex = oi;
+          synthEvent(el, "input"); synthEvent(el, "change");
+          break;
+        }
+        case "setChecked":
+          el.checked = plan.checked;
+          synthEvent(el, "change");
+          break;
+        default:
+          return { ok: false, reason: "unsupported action: " + plan.action };
+      }
+      return { ok: true };
+    }
+    function cancelReplay(message) {
+      if (!replaying) return false;
+      replaying = false;
+      if (playTimer) { global.clearTimeout(playTimer); playTimer = 0; }
+      if (panel) { panel.setRowStatus(-1, null); if (message) panel.setHint(message); }
+      if (overlay) overlay.hide();
+      return true;
+    }
+    function play() {
+      if (replaying || !steps.length || !panel) return;
+      replaying = true;
+      var i = 0;
+      var executed = 0;
+      panel.setHint("Replaying…  Esc cancels.");
+      function fail(idx, reason) {
+        replaying = false; playTimer = 0;
+        panel.setRowStatus(idx, "fail");
+        panel.setHint("Replay FAILED at step " + (idx + 1) + ": " + reason);
+      }
+      function next() {
+        playTimer = 0;
+        if (!replaying) return;                       // cancelled or stopped
+        if (i >= steps.length) {
+          replaying = false;
+          panel.setRowStatus(-1, null);
+          panel.setHint("replay OK (" + executed + " steps)");
+          if (overlay) overlay.hide();
+          return;
+        }
+        var idx = i++;
+        var st = steps[idx];
+        var plan = resolveCore.planStep(st);
+        panel.setRowStatus(idx, plan.action === "marker" ? null : "active");
+        var result;
+        try { result = runPlanned(st, plan); }
+        catch (e) { fail(idx, String((e && e.message) || e)); return; }
+        if (result && result.ok === false) { fail(idx, result.reason || "step failed"); return; }
+        if (result !== "skip") executed++;
+        var delay = plan.action === "marker" ? 0
+          : plan.action === "wait" ? plan.ms : REPLAY_DELAY;
+        playTimer = global.setTimeout(next, delay);
+      }
+      next();
+    }
 
     // ---- export ------------------------------------------------------------
     function testName() { return (panel && panel.getTestName() || "").trim() || DEFAULT_NAME; }
@@ -1387,7 +2065,66 @@
         { label: "Download .robot suite (SeleniumLibrary)", onPick: function () { exportAs("selenium-robot"); } },
         { label: "Download .resource + .robot pair (SeleniumLibrary)", onPick: function () { exportAs("selenium-resource-pair"); } },
         { label: "Copy step body to clipboard", onPick: function () { exportAs("body"); } },
+        { label: "Import .robot…", onPick: importRobot },
       ]);
+    }
+
+    // ---- .robot re-import --------------------------------------------------
+    // Reads an exported Browser-library suite back into the step list
+    // (REPLACES the current steps). Unparseable lines are counted in the
+    // hint — parseSuite surfaces them, it never drops them silently.
+    function importRobot() {
+      var input = doc.createElement("input");
+      input.type = "file";
+      input.accept = ".robot,.txt,text/plain";
+      input.style.display = "none";
+      input.addEventListener("change", function () {
+        var file = input.files && input.files[0];
+        input.remove();
+        if (!file) return;
+        var reader = new FileReader();
+        reader.onload = function () {
+          var parsed = emit.parseSuite(String(reader.result || ""));
+          steps = parsed.steps;
+          if (parsed.testName) {
+            saveName(parsed.testName);
+            if (panel) panel.setTestName(parsed.testName);
+          }
+          if (parsed.url) {
+            try { global.sessionStorage.setItem(URL_KEY, parsed.url); } catch (e) { /* ignore */ }
+          }
+          saveSteps();
+          renderPanel();
+          if (panel) {
+            panel.setHint("Imported " + steps.length + " step(s) from " + file.name +
+              (parsed.skipped.length ? " — skipped " + parsed.skipped.length + " unparseable line(s)" : "") + ".");
+          }
+        };
+        reader.readAsText(file);
+      });
+      doc.documentElement.appendChild(input);
+      input.click();
+    }
+
+    // ---- step editing / scenario markers -----------------------------------
+    // Inline edit commit (panel double-click): value-bearing steps update the
+    // value, press updates the key, markers their name, everything else the
+    // locator (locator edits invalidate the recorded strategy/CSS fallback).
+    function editStep(i, text) {
+      var st = steps[i];
+      if (!st) return;
+      if ("value" in st) {
+        st.value = (st.type === "assert-count" && /^\d+$/.test(text.trim())) ? Number(text.trim()) : text;
+      } else if (st.type === "press") {
+        st.key = text;
+      } else if (st.type === "test") {
+        st.name = text;
+      } else {
+        st.locator = text;
+        st.strategy = "edited";
+        delete st.css;
+      }
+      saveSteps(); renderPanel();
     }
 
     // ---- recording state ---------------------------------------------------
@@ -1416,6 +2153,8 @@
       menu = ui.createMenu(doc);
       panel = ui.createPanel(doc, {
         onToggleRec: function () { setRecording(!recording); },
+        onPlay: play,
+        onAddTest: function (name) { addStep({ type: "test", name: name }); },
         onExport: onExportClick,
         onClear: function () {
           captures = []; steps = [];
@@ -1431,6 +2170,7 @@
           saveSteps(); renderPanel();
         },
         onRemoveStep: function (i) { steps.splice(i, 1); saveSteps(); renderPanel(); },
+        onEditStep: editStep,
         onNameInput: saveName,
       });
       panel.setTestName(loadName());
@@ -1444,11 +2184,13 @@
       global.addEventListener("hashchange", onNav, true);
       global.addEventListener("popstate", onNav, true);
       global.addEventListener("beforeunload", onBeforeUnload, true);
-      console.info("[rf-web-recorder] Ready. Hover to highlight, click to capture, rec to record. " +
+      console.info("[rf-web-recorder] Ready. Hover to highlight, click to capture, rec to record, " +
+        "play to replay, +test to start a new test case. " +
         "Right-click while recording opens the assertion menu. Esc stops.");
     }
     function stop() {
       if (!running) return;
+      cancelReplay(null);
       running = false;
       recording = false;
       doc.removeEventListener("mousemove", onMove, true);
@@ -1474,6 +2216,8 @@
       toggleRecording: function () { setRecording(!recording); },
       setRecording: setRecording,
       isRecording: function () { return recording; },
+      play: play,
+      isReplaying: function () { return replaying; },
       exportAs: exportAs,
     };
   }
@@ -1497,15 +2241,17 @@
   var instance = CORE.recorder.create();
 
   global.__RFREC = {
-    version: "0.1.0",
+    version: "0.3.0",
     start: instance.start,
     stop: instance.stop,
     isRunning: instance.isRunning,
     toggleRecording: instance.toggleRecording,
     setRecording: instance.setRecording,
     isRecording: instance.isRecording,
-    exportAs: instance.exportAs,      // "robot" | "resource-pair" | "body"
-    core: CORE,                       // locator/step/emit internals for power users
+    play: instance.play,              // in-panel replay of the recorded steps
+    isReplaying: instance.isReplaying,
+    exportAs: instance.exportAs,      // "robot" | "resource-pair" | "body" (+ "selenium-" prefixes)
+    core: CORE,                       // locator/step/emit/resolve internals for power users
   };
 
   instance.start();

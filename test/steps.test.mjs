@@ -72,3 +72,41 @@ test("isSame compares type, locator, value and key", () => {
   assert.equal(isSame(click("id=a"), click("id=b")), false);
   assert.equal(isSame({ type: "press", key: "Enter" }, { type: "press", key: "Tab" }), false);
 });
+
+// ---- scenario markers ------------------------------------------------------
+function marker(name) { return { type: "test", name }; }
+
+test("test markers always pass through, even consecutively", () => {
+  const steps = [];
+  assert.equal(addStep(steps, marker("A")), true);
+  assert.equal(addStep(steps, marker("A")), true);   // no dedup on markers
+  assert.equal(steps.length, 2);
+});
+
+test("a marker breaks fill compaction adjacency", () => {
+  const steps = [];
+  addStep(steps, fill("id=user", "adm"));
+  addStep(steps, marker("Scenario 2"));
+  addStep(steps, fill("id=user", "admin"));
+  assert.equal(steps.length, 3);
+  assert.equal(steps[0].value, "adm");
+  assert.equal(steps[2].value, "admin");
+});
+
+test("a marker breaks wait-load compaction adjacency", () => {
+  const steps = [];
+  addStep(steps, { type: "wait-load" });
+  addStep(steps, marker("Next"));
+  addStep(steps, { type: "wait-load" });
+  assert.deepEqual(steps.map((s) => s.type), ["wait-load", "test", "wait-load"]);
+});
+
+test("compact() keeps markers in place", () => {
+  const out = compact([
+    fill("id=q", "a"), fill("id=q", "ab"),
+    marker("Second"),
+    fill("id=q", "abc"),
+  ]);
+  assert.deepEqual(out.map((s) => s.type), ["fill", "test", "fill"]);
+  assert.equal(out[1].name, "Second");
+});
