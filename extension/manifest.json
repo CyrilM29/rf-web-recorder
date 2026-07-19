@@ -1,15 +1,20 @@
 {
   "manifest_version": 3,
   "name": "RF Web Recorder",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Record clicks, inputs and assertions on any web page as Robot Framework Browser-library keywords, exported as a .robot suite. Framework-agnostic: React, Angular, Vue, Web Components, vanilla.",
-  "permissions": ["scripting", "activeTab"],
+  "permissions": [
+    "scripting",
+    "activeTab"
+  ],
   "background": {
     "service_worker": "background.js"
   },
   "commands": {
     "toggle-record": {
-      "suggested_key": { "default": "Alt+Shift+U" },
+      "suggested_key": {
+        "default": "Alt+Shift+U"
+      },
       "description": "Start/stop recording on the active tab"
     }
   },

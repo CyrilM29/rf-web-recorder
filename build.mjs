@@ -20,6 +20,7 @@ const ORDER = [
   "src/core/locators.js",
   "src/core/steps.js",
   "src/core/emit_browser.js",
+  "src/core/emit_selenium.js",   // depends on emit_browser (rfEscape)
   "src/panel/panel.js",
   "src/recorder.js",
   "src/main.js",

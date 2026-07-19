@@ -138,18 +138,42 @@ supprimé que pendant le mode record.
 
 ## Formats d'export
 
-Le bouton `export` du panneau propose trois formats (le bouton **Export** du
+Le bouton `export` du panneau propose cinq formats (le bouton **Export** du
 popup utilise le premier) :
 
-1. **Suite `.robot` complète** — `Library    Browser`, un test nommé d'après le
-   champ de nom éditable, démarrant par `New Browser    chromium    headless=False`
-   puis `New Page    <url>`. Téléchargée et copiée dans le presse-papiers.
-2. **Paire resource-first** — `recorded_keywords.resource` (chaque localisateur
-   distinct devient une variable `${LOC_<N>_<SLUG>}` + de petits keywords
-   d'action comme `Fill Username`) et une suite `.robot` qui n'appelle **que
-   ces keywords** : aucun localisateur n'apparaît dans le test.
-3. **Corps de steps brut** — presse-papiers uniquement, pour coller dans un
-   test existant.
+1. **Suite `.robot` complète (Browser)** — `Library    Browser`, un test nommé
+   d'après le champ de nom éditable, démarrant par
+   `New Browser    chromium    headless=False` puis `New Page    <url>`.
+   Téléchargée et copiée dans le presse-papiers.
+2. **Paire resource-first (Browser)** — `recorded_keywords.resource` (chaque
+   localisateur distinct devient une variable `${LOC_<N>_<SLUG>}` + de petits
+   keywords d'action comme `Fill Username`) et une suite `.robot` qui n'appelle
+   **que ces keywords** : aucun localisateur n'apparaît dans le test.
+3. **Suite `.robot` complète (SeleniumLibrary)** — le même enregistrement, émis
+   en keywords SeleniumLibrary (`Click Element`, `Input Text`,
+   `Select From List By Label`, `Element Text Should Be`,
+   `Press Keys    None    ENTER`…), amorcé par `Open Browser    <url>    Chrome`.
+4. **Paire resource-first (SeleniumLibrary)** — le même patron sans
+   localisateur dans le test, saveur SeleniumLibrary.
+5. **Corps de steps brut** — presse-papiers uniquement (keywords Browser), pour
+   coller dans un test existant.
+
+### Traduction des localisateurs vers SeleniumLibrary
+
+Selenium n'a pas les moteurs de sélecteurs Playwright ; l'adaptateur traduit
+chaque localisateur enregistré :
+
+| Enregistré (Browser/Playwright) | Émis (SeleniumLibrary) |
+|---|---|
+| `[data-testid="save"]`, `[placeholder="…"]`, chemins CSS | `css:` + le même sélecteur |
+| `id=login` | `id:login` |
+| `role=button[name="Submit"]`, `text="…"` | `css:` + le **repli chemin CSS** enregistré avec chaque step |
+
+Les steps enregistrés avant la v0.2 (sans repli CSS stocké) qui utilisaient un
+sélecteur `role=`/`text=` sont conservés en commentaires `# untranslatable…` —
+rien n'est perdu en silence. Limite assumée : le CSS de Playwright perce les
+shadow roots ouverts, celui de Selenium non — un step capturé dans du shadow
+DOM peut ne pas se rejouer sous SeleniumLibrary.
 
 ## Développement
 
@@ -166,6 +190,7 @@ Arborescence :
 | `src/core/locators.js` | Rôle calculé, nom accessible, chemin CSS, génération + scoring d'unicité des candidats. Pur, duck-typé. |
 | `src/core/steps.js` | Modèle de step + règles de dédup/compaction. Pur. |
 | `src/core/emit_browser.js` | Step → lignes de keywords Browser ; constructeur de suite ; constructeur resource-first. Pur. |
+| `src/core/emit_selenium.js` | Second adaptateur d'émission : step → lignes de keywords SeleniumLibrary, avec traduction des localisateurs Browser→Selenium (repli CSS par step). Pur. |
 | `src/panel/panel.js` | Panneau flottant déplaçable, surlignage, menu flottant. Navigateur uniquement. |
 | `src/recorder.js` | Câblage des événements : modes capture/record, menu d'assertions, persistance, export. |
 | `src/main.js` | Bootstrap `window.__RFREC` (API start/stop/export). |

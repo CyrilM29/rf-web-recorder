@@ -133,17 +133,43 @@ suppressed while record mode is on.
 
 ## Export formats
 
-The panel's `export` button offers three formats (the popup's **Export** uses
+The panel's `export` button offers five formats (the popup's **Export** uses
 the first):
 
-1. **Full `.robot` suite** — `Library    Browser`, one test case named from the
-   editable test-name field, starting with `New Browser    chromium    headless=False`
-   and `New Page    <url>`. Downloaded and copied to the clipboard.
-2. **Resource-first pair** — `recorded_keywords.resource` (each distinct
-   locator becomes a `${LOC_<N>_<SLUG>}` variable + small action keywords like
-   `Fill Username`) and a `.robot` suite that calls **only those keywords**:
-   locators never appear in the test.
-3. **Plain step body** — clipboard only, for pasting into an existing test.
+1. **Full `.robot` suite (Browser)** — `Library    Browser`, one test case named
+   from the editable test-name field, starting with
+   `New Browser    chromium    headless=False` and `New Page    <url>`.
+   Downloaded and copied to the clipboard.
+2. **Resource-first pair (Browser)** — `recorded_keywords.resource` (each
+   distinct locator becomes a `${LOC_<N>_<SLUG>}` variable + small action
+   keywords like `Fill Username`) and a `.robot` suite that calls **only those
+   keywords**: locators never appear in the test.
+3. **Full `.robot` suite (SeleniumLibrary)** — same recording, emitted as
+   SeleniumLibrary keywords (`Click Element`, `Input Text`,
+   `Select From List By Label`, `Element Text Should Be`,
+   `Press Keys    None    ENTER`…), bootstrapped with
+   `Open Browser    <url>    Chrome`.
+4. **Resource-first pair (SeleniumLibrary)** — the same locator-free pattern,
+   SeleniumLibrary flavour.
+5. **Plain step body** — clipboard only (Browser keywords), for pasting into an
+   existing test.
+
+### SeleniumLibrary locator translation
+
+Selenium has no Playwright selector engines, so the adapter translates each
+recorded locator:
+
+| Recorded (Browser/Playwright) | Emitted (SeleniumLibrary) |
+|---|---|
+| `[data-testid="save"]`, `[placeholder="…"]`, CSS paths | `css:` + the same selector |
+| `id=login` | `id:login` |
+| `role=button[name="Submit"]`, `text="…"` | `css:` + the **CSS-path fallback** recorded with every step |
+
+Steps recorded before v0.2 (no CSS fallback stored) that used a `role=`/`text=`
+selector are kept as `# untranslatable…` comments — nothing is silently
+dropped. One honest caveat: Playwright CSS pierces open shadow roots,
+Selenium CSS does not — steps captured inside shadow DOM may not replay under
+SeleniumLibrary.
 
 ## Development
 
@@ -160,6 +186,7 @@ Layout:
 | `src/core/locators.js` | Computed role, accessible name, CSS path, candidate generation + uniqueness scoring. Pure, duck-typed. |
 | `src/core/steps.js` | Step model + dedup/compaction rules. Pure. |
 | `src/core/emit_browser.js` | Step → Browser-library keyword lines; suite builder; resource-first builder. Pure. |
+| `src/core/emit_selenium.js` | Second emission adapter: step → SeleniumLibrary keyword lines, with Browser→Selenium locator translation (CSS fallback per step). Pure. |
 | `src/panel/panel.js` | Floating draggable panel, overlay, floating menu. Browser-only. |
 | `src/recorder.js` | Event wiring: capture/record modes, assertion menu, persistence, export. |
 | `src/main.js` | `window.__RFREC` bootstrap (start/stop/export API). |

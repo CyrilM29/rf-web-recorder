@@ -27,10 +27,11 @@
   var DEFAULT_NAME = "Recorded Scenario";
   var HINT_CAPTURE = "Hover + click to capture a locator. rec to record. Esc to stop.";
   var HINT_RECORD = "Recording: clicks and typed values become steps. " +
-    "Right-click an element for assertions. export offers .robot / resource pair / clipboard.";
+    "Right-click an element for assertions. export offers Browser / SeleniumLibrary formats.";
 
   function createRecorder() {
-    var locators = CORE.locators, stepsCore = CORE.steps, emit = CORE.emit, ui = CORE.panel;
+    var locators = CORE.locators, stepsCore = CORE.steps, emit = CORE.emit,
+        emitSelenium = CORE.emitSelenium, ui = CORE.panel;
     var doc = global.document;
 
     var running = false;
@@ -105,7 +106,18 @@
     function bestFor(el) {
       var best = locators.bestLocator(el, doc);
       best.name = locators.accName(el, doc).slice(0, 40);
+      // Anchored CSS path fallback (always the last candidate): stored on every
+      // step so non-Playwright emitters (SeleniumLibrary) can translate steps
+      // whose winning selector uses an engine they lack (role= / text=).
+      var cands = best.candidates;
+      best.css = cands && cands.length ? cands[cands.length - 1].selector : null;
       return best;
+    }
+    function stepFields(type, best, extra) {
+      var step = { type: type, locator: best.selector, strategy: best.strategy,
+                   name: best.name, css: best.css };
+      for (var k in (extra || {})) step[k] = extra[k];
+      return step;
     }
     function isPasswordField(t) {
       var ty = (t && t.getAttribute) ? String(t.getAttribute("type") || t.type || "") : String(t.type || "");
@@ -137,7 +149,7 @@
         var type = String((target.getAttribute && target.getAttribute("type")) || "").toLowerCase();
         if (tag === "input" && (type === "checkbox" || type === "radio")) return; // change handles those
         var best = bestFor(target);
-        addStep({ type: "click", locator: best.selector, strategy: best.strategy, name: best.name });
+        addStep(stepFields("click", best));
         return;                                       // never block the app while recording
       }
       // capture mode: inspection only — swallow the click
@@ -162,28 +174,25 @@
         var opt = (t.selectedOptions && t.selectedOptions[0]) ||
                   (t.options && t.options[t.selectedIndex]);
         var label = opt ? (opt.label || opt.textContent || "").trim() : "";
-        addStep({ type: "select", locator: best.selector, strategy: best.strategy,
-                  name: best.name, value: label });
+        addStep(stepFields("select", best, { value: label }));
         return;
       }
       var type = String((t.getAttribute && t.getAttribute("type")) || t.type || "").toLowerCase();
       if (tag === "input" && type === "checkbox") {
         best = bestFor(t);
-        addStep({ type: t.checked ? "check" : "uncheck", locator: best.selector,
-                  strategy: best.strategy, name: best.name });
+        addStep(stepFields(t.checked ? "check" : "uncheck", best));
         return;
       }
       if (tag === "input" && type === "radio") {
         best = bestFor(t);
-        addStep({ type: "click", locator: best.selector, strategy: best.strategy, name: best.name });
+        addStep(stepFields("click", best));
         return;
       }
       if ((tag === "input" || tag === "textarea") && "value" in t) {
         best = bestFor(t);
         // Passwords never reach the export/clipboard/sessionStorage in clear text.
         var value = isPasswordField(t) ? "<PASSWORD>" : t.value;
-        addStep({ type: "fill", locator: best.selector, strategy: best.strategy,
-                  name: best.name, value: value });
+        addStep(stepFields("fill", best, { value: value }));
       }
     }
 
@@ -221,14 +230,14 @@
       var count = candidateCount(best);
       menu.open(event.clientX, event.clientY, [
         { label: "Assert visible", onPick: function () {
-            addStep({ type: "assert-visible", locator: best.selector, strategy: best.strategy, name: best.name }); } },
+            addStep(stepFields("assert-visible", best)); } },
         { label: "Assert text" + (text ? " (“" + text.slice(0, 24) + (text.length > 24 ? "…" : "") + "”)" : ""),
           onPick: function () {
-            addStep({ type: "assert-text", locator: best.selector, strategy: best.strategy, name: best.name, value: text }); } },
+            addStep(stepFields("assert-text", best, { value: text })); } },
         { label: "Assert value", onPick: function () {
-            addStep({ type: "assert-value", locator: best.selector, strategy: best.strategy, name: best.name, value: value }); } },
+            addStep(stepFields("assert-value", best, { value: value })); } },
         { label: "Assert count (" + count + ")", onPick: function () {
-            addStep({ type: "assert-count", locator: best.selector, strategy: best.strategy, name: best.name, value: count }); } },
+            addStep(stepFields("assert-count", best, { value: count })); } },
       ]);
     }
 
@@ -243,23 +252,29 @@
     }
     function exportAs(format) {
       var opts = { testName: testName(), url: startUrl(), steps: steps };
+      // Emission adapter: Browser library by default, SeleniumLibrary on demand
+      // (locator translation lives in emit_selenium.js — same export shapes).
+      var target = (format.indexOf("selenium-") === 0) ? emitSelenium : emit;
+      format = format.replace(/^selenium-/, "");
       if (format === "resource-pair") {
-        var pair = emit.buildResourcePair(opts);
+        var pair = target.buildResourcePair(opts);
         download(pair.resource, pair.resourceName);
         download(pair.suite, fileSlug() + ".robot");
         copy(pair.suite);
       } else if (format === "body") {
-        copy(emit.emitBody(steps));
+        copy(target.emitBody(steps));
       } else {
-        var text = emit.buildSuite(opts);
+        var text = target.buildSuite(opts);
         download(text, fileSlug() + ".robot");
         copy(text);
       }
     }
     function onExportClick(anchorRect) {
       menu.open(anchorRect.left, anchorRect.bottom + 4, [
-        { label: "Download .robot suite", onPick: function () { exportAs("robot"); } },
-        { label: "Download .resource + .robot pair", onPick: function () { exportAs("resource-pair"); } },
+        { label: "Download .robot suite (Browser)", onPick: function () { exportAs("robot"); } },
+        { label: "Download .resource + .robot pair (Browser)", onPick: function () { exportAs("resource-pair"); } },
+        { label: "Download .robot suite (SeleniumLibrary)", onPick: function () { exportAs("selenium-robot"); } },
+        { label: "Download .resource + .robot pair (SeleniumLibrary)", onPick: function () { exportAs("selenium-resource-pair"); } },
         { label: "Copy step body to clipboard", onPick: function () { exportAs("body"); } },
       ]);
     }
