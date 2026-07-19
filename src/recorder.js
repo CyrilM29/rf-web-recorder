@@ -79,13 +79,22 @@
         setTimeout(function () { btn.textContent = t; }, 700);
       }
     }
+    // Our own transient DOM helpers (download anchor, import file input) are
+    // parented to the PANEL, never to documentElement: their synthetic .click()
+    // reaches the document capture listener like any other click, and only
+    // `inOurUI()` keeps it out of the recording. Parented elsewhere, every
+    // export would append a bogus step to the recording (caught live: the
+    // download anchor was recorded as `Click body > a:nth-of-type(1)`).
+    function ourTransientHost() {
+      return doc.getElementById("__rfrecPanel") || doc.documentElement;
+    }
     // Dependency-free file download via a Blob anchor click.
     function download(text, filename) {
       var blob = new Blob([text], { type: "text/plain;charset=utf-8" });
       var url = URL.createObjectURL(blob);
       var a = doc.createElement("a");
       a.href = url; a.download = filename; a.style.display = "none";
-      doc.documentElement.appendChild(a);
+      ourTransientHost().appendChild(a);
       a.click();
       a.remove();
       setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
@@ -449,7 +458,7 @@
         };
         reader.readAsText(file);
       });
-      doc.documentElement.appendChild(input);
+      ourTransientHost().appendChild(input);   // see ourTransientHost: never record our own click
       input.click();
     }
 

@@ -34,7 +34,7 @@ test("build() writes both bundles with the expected markers", () => {
 test("extension manifest is valid MV3 JSON with the expected surface", () => {
   const manifest = JSON.parse(readFileSync(path.join(ROOT, "extension", "manifest.json"), "utf8"));
   assert.equal(manifest.manifest_version, 3);
-  assert.equal(manifest.version, "0.3.0");
+  assert.equal(manifest.version, "0.3.1");
   assert.ok(manifest.permissions.includes("scripting"));
   assert.ok(manifest.permissions.includes("activeTab"));
   assert.equal(manifest.background.service_worker, "background.js");
@@ -48,4 +48,16 @@ test("package.json declares no dependencies at all", () => {
   assert.equal(pkg.dependencies, undefined);
   assert.equal(pkg.devDependencies, undefined);
   assert.equal(pkg.license, "Apache-2.0");
+});
+
+test("our own transient DOM helpers are parented to the panel, never the document", () => {
+  // Live find (0.3.1): the export download anchor was appended to
+  // documentElement and its synthetic .click() got RECORDED as a step with a
+  // bogus locator — every export polluted the next recording.
+  const bundle = readFileSync(path.join(ROOT, "dist", "recorder_snippet.js"), "utf8");
+  assert.ok(bundle.includes("function ourTransientHost()"));
+  assert.ok(bundle.includes("ourTransientHost().appendChild(a)"));
+  assert.ok(bundle.includes("ourTransientHost().appendChild(input)"));
+  assert.ok(!bundle.includes("doc.documentElement.appendChild(a)"));
+  assert.ok(!bundle.includes("doc.documentElement.appendChild(input)"));
 });

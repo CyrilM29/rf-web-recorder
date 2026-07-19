@@ -122,11 +122,18 @@
   }
 
   // ---- resource-first pair (same shape as emit_browser's) ------------------
-  function slugOf(step, fallback) {
-    var basis = step.name || step.value || "";
-    if (!basis && step.locator) basis = String(step.locator).replace(/^[a-z-]+=/, "");
-    var s = String(basis).toUpperCase().replace(/[^A-Z0-9]+/g, "_")
+  function slugText(text) {
+    return String(text || "").toUpperCase().replace(/[^A-Z0-9]+/g, "_")
       .replace(/^_+|_+$/g, "").slice(0, 24).replace(/_+$/g, "");
+  }
+  function slugOf(step, fallback) {
+    // Same rule as emit_browser: an empty/numeric slug names the value, not the
+    // target — fall back to the locator before the generic ELEMENT_<n>.
+    var s = slugText(step.name || step.value);
+    if (!s || /^[0-9_]+$/.test(s)) {
+      var fromLocator = slugText(String(step.locator || "").replace(/^[a-z-]+=/, ""));
+      if (fromLocator && !/^[0-9_]+$/.test(fromLocator)) s = fromLocator;
+    }
     return s || fallback;
   }
   function titleCase(slug) {

@@ -285,3 +285,25 @@ test("parseSuite: unparseable lines are surfaced in `skipped`, never dropped", (
   assert.deepEqual(parsed.skipped,
     ["Log    hello there", "[Tags]    smoke", "Fill Username    admin"]);
 });
+
+// ---- regressions caught by the first real-browser run (0.3.1) --------------
+
+test("keyword names never come from a purely numeric value", () => {
+  // Live find: an assert-text on a counter <span> (no accessible name) produced
+  // the keyword "1 Text Should Be" — the slug came from the VALUE. The locator
+  // names the target, so it wins over a numeric value.
+  const pair = emit.buildResourcePair({
+    testName: "Counter",
+    steps: [{ type: "assert-text", locator: "id=saves", value: "1" }],
+  });
+  assert.ok(pair.resource.includes("Saves Text Should Be"));
+  assert.ok(!pair.resource.includes("1 Text Should Be"));
+  assert.ok(pair.suite.includes("Saves Text Should Be    1"));
+});
+
+test("a named step still wins over its locator", () => {
+  const pair = emit.buildResourcePair({
+    steps: [{ type: "fill", locator: 'role=textbox[name="User"]', name: "User", value: "alice" }],
+  });
+  assert.ok(pair.resource.includes("Fill User"));
+});

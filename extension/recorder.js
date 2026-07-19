@@ -1,5 +1,5 @@
 /*
- * rf-web-recorder v0.3.0 — universal Robot Framework Browser-library recorder.
+ * rf-web-recorder v0.3.1 — universal Robot Framework Browser-library recorder.
  *
  * Hover to highlight + click to capture locators; « rec » records your
  * interactions as replayable Browser-library keywords; « play » replays the
@@ -524,11 +524,19 @@
   }
 
   // ---- resource-first pair -------------------------------------------------
-  function slugOf(step, fallback) {
-    var base = step.name || step.value || "";
-    if (!base && step.locator) base = String(step.locator).replace(/^[a-z-]+=/, "");
-    var s = String(base).toUpperCase().replace(/[^A-Z0-9]+/g, "_")
+  function slugText(text) {
+    return String(text || "").toUpperCase().replace(/[^A-Z0-9]+/g, "_")
       .replace(/^_+|_+$/g, "").slice(0, 24).replace(/_+$/g, "");
+  }
+  function slugOf(step, fallback) {
+    var s = slugText(step.name || step.value);
+    // An empty or purely numeric slug makes a poor keyword name ("1 Text Should
+    // Be", caught live on a counter span with no accessible name): prefer the
+    // locator, which names the TARGET rather than its current value.
+    if (!s || /^[0-9_]+$/.test(s)) {
+      var fromLocator = slugText(String(step.locator || "").replace(/^[a-z-]+=/, ""));
+      if (fromLocator && !/^[0-9_]+$/.test(fromLocator)) s = fromLocator;
+    }
     return s || fallback;
   }
   function titleCase(slug) {
@@ -919,11 +927,18 @@
   }
 
   // ---- resource-first pair (same shape as emit_browser's) ------------------
-  function slugOf(step, fallback) {
-    var basis = step.name || step.value || "";
-    if (!basis && step.locator) basis = String(step.locator).replace(/^[a-z-]+=/, "");
-    var s = String(basis).toUpperCase().replace(/[^A-Z0-9]+/g, "_")
+  function slugText(text) {
+    return String(text || "").toUpperCase().replace(/[^A-Z0-9]+/g, "_")
       .replace(/^_+|_+$/g, "").slice(0, 24).replace(/_+$/g, "");
+  }
+  function slugOf(step, fallback) {
+    // Same rule as emit_browser: an empty/numeric slug names the value, not the
+    // target — fall back to the locator before the generic ELEMENT_<n>.
+    var s = slugText(step.name || step.value);
+    if (!s || /^[0-9_]+$/.test(s)) {
+      var fromLocator = slugText(String(step.locator || "").replace(/^[a-z-]+=/, ""));
+      if (fromLocator && !/^[0-9_]+$/.test(fromLocator)) s = fromLocator;
+    }
     return s || fallback;
   }
   function titleCase(slug) {
@@ -1732,13 +1747,22 @@
         setTimeout(function () { btn.textContent = t; }, 700);
       }
     }
+    // Our own transient DOM helpers (download anchor, import file input) are
+    // parented to the PANEL, never to documentElement: their synthetic .click()
+    // reaches the document capture listener like any other click, and only
+    // `inOurUI()` keeps it out of the recording. Parented elsewhere, every
+    // export would append a bogus step to the recording (caught live: the
+    // download anchor was recorded as `Click body > a:nth-of-type(1)`).
+    function ourTransientHost() {
+      return doc.getElementById("__rfrecPanel") || doc.documentElement;
+    }
     // Dependency-free file download via a Blob anchor click.
     function download(text, filename) {
       var blob = new Blob([text], { type: "text/plain;charset=utf-8" });
       var url = URL.createObjectURL(blob);
       var a = doc.createElement("a");
       a.href = url; a.download = filename; a.style.display = "none";
-      doc.documentElement.appendChild(a);
+      ourTransientHost().appendChild(a);
       a.click();
       a.remove();
       setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
@@ -2102,7 +2126,7 @@
         };
         reader.readAsText(file);
       });
-      doc.documentElement.appendChild(input);
+      ourTransientHost().appendChild(input);   // see ourTransientHost: never record our own click
       input.click();
     }
 
@@ -2241,7 +2265,7 @@
   var instance = CORE.recorder.create();
 
   global.__RFREC = {
-    version: "0.3.0",
+    version: "0.3.1",
     start: instance.start,
     stop: instance.stop,
     isRunning: instance.isRunning,

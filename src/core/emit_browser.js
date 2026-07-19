@@ -138,11 +138,19 @@
   }
 
   // ---- resource-first pair -------------------------------------------------
-  function slugOf(step, fallback) {
-    var base = step.name || step.value || "";
-    if (!base && step.locator) base = String(step.locator).replace(/^[a-z-]+=/, "");
-    var s = String(base).toUpperCase().replace(/[^A-Z0-9]+/g, "_")
+  function slugText(text) {
+    return String(text || "").toUpperCase().replace(/[^A-Z0-9]+/g, "_")
       .replace(/^_+|_+$/g, "").slice(0, 24).replace(/_+$/g, "");
+  }
+  function slugOf(step, fallback) {
+    var s = slugText(step.name || step.value);
+    // An empty or purely numeric slug makes a poor keyword name ("1 Text Should
+    // Be", caught live on a counter span with no accessible name): prefer the
+    // locator, which names the TARGET rather than its current value.
+    if (!s || /^[0-9_]+$/.test(s)) {
+      var fromLocator = slugText(String(step.locator || "").replace(/^[a-z-]+=/, ""));
+      if (fromLocator && !/^[0-9_]+$/.test(fromLocator)) s = fromLocator;
+    }
     return s || fallback;
   }
   function titleCase(slug) {
