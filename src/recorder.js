@@ -230,7 +230,12 @@
       }
       if (!recording || inOurUI(event.target)) return;
       if (event.key === "Enter" || event.key === "Tab") {
-        addStep({ type: "press", key: event.key });
+        // Deferred one tick ON PURPOSE: a field's `change` fires on blur, i.e.
+        // AFTER this keydown (Tab moves focus away, Enter submits). Recording
+        // the key immediately put it BEFORE the fill it actually followed —
+        // replaying that pressed Enter on an empty field, then filled it.
+        // Caught by the first visible-browser demo run.
+        setTimeout(function () { addStep({ type: "press", key: event.key }); }, 0);
       }
     }
 

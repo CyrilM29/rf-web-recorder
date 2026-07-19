@@ -1,5 +1,5 @@
 /*
- * rf-web-recorder v0.3.1 — universal Robot Framework Browser-library recorder.
+ * rf-web-recorder v0.3.2 — universal Robot Framework Browser-library recorder.
  *
  * Hover to highlight + click to capture locators; « rec » records your
  * interactions as replayable Browser-library keywords; « play » replays the
@@ -1898,7 +1898,12 @@
       }
       if (!recording || inOurUI(event.target)) return;
       if (event.key === "Enter" || event.key === "Tab") {
-        addStep({ type: "press", key: event.key });
+        // Deferred one tick ON PURPOSE: a field's `change` fires on blur, i.e.
+        // AFTER this keydown (Tab moves focus away, Enter submits). Recording
+        // the key immediately put it BEFORE the fill it actually followed —
+        // replaying that pressed Enter on an empty field, then filled it.
+        // Caught by the first visible-browser demo run.
+        setTimeout(function () { addStep({ type: "press", key: event.key }); }, 0);
       }
     }
 
@@ -2265,7 +2270,7 @@
   var instance = CORE.recorder.create();
 
   global.__RFREC = {
-    version: "0.3.1",
+    version: "0.3.2",
     start: instance.start,
     stop: instance.stop,
     isRunning: instance.isRunning,
