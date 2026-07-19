@@ -20,6 +20,12 @@ ${FIXTURE}          ${CURDIR}${/}demo_page.html
 ${BUNDLE}           ${CURDIR}${/}..${/}dist${/}recorder_snippet.js
 ${OUT}              ${CURDIR}${/}..${/}dist${/}video
 ${BEAT}             1.8s
+# Headless par DÉFAUT pour la prise : une fenêtre visible reste interactive, donc
+# un simple mouvement de souris pollue l'enregistrement. `-v HEADLESS:False`
+# pour regarder la démo se dérouler (mais alors, ne pas toucher souris/clavier).
+${HEADLESS}         ${True}
+# posée à l'exécution (chemin résolu en slashes) — déclarée ici pour l'analyse statique
+${VIDEO_DIR}        ${EMPTY}
 
 
 *** Test Cases ***
@@ -31,7 +37,7 @@ Record The Demo Video
     ${video_dir}=    Evaluate    pathlib.Path(r"${OUT}").resolve().as_posix()    pathlib
     Set Suite Variable    ${VIDEO_DIR}    ${video_dir}
     Create Directory    ${video_dir}
-    New Browser    chromium    headless=${False}    slowMo=0:00:00.20
+    New Browser    chromium    headless=${HEADLESS}    slowMo=0:00:00.20
     New Context
     ...    viewport={'width': 1280, 'height': 720}
     ...    recordVideo={'dir': '${video_dir}', 'size': {'width': 1280, 'height': 720}}
