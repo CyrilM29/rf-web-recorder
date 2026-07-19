@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Acme Orders — demo app</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 15px/1.5 -apple-system, "Segoe UI", sans-serif;
+           color: #1f2933; background: #f4f6f9; }
+    .app { max-width: 640px; margin: 24px auto; background: #fff; border-radius: 10px;
+           box-shadow: 0 2px 14px rgba(18,38,63,.10); overflow: hidden; }
+    .app header { background: #12263f; color: #fff; padding: 16px 26px; font-size: 18px; font-weight: 600; }
+    .app .body { padding: 22px 26px 26px; }
+    .field { margin-bottom: 18px; }
+    label { display: block; font-size: 13px; font-weight: 600; color: #52606d; margin-bottom: 5px; }
+    input[type=text], select { width: 100%; padding: 9px 11px; border: 1px solid #cbd2d9;
+           border-radius: 6px; font-size: 15px; background: #fff; }
+    input[type=text]:focus, select:focus { outline: none; border-color: #2f6fed; box-shadow: 0 0 0 3px rgba(47,111,237,.15); }
+    .check { display: flex; align-items: center; gap: 9px; }
+    .check label { margin: 0; font-weight: 400; color: #1f2933; }
+    .actions { display: flex; align-items: center; gap: 16px; margin-top: 22px;
+               border-top: 1px solid #e4e7eb; padding-top: 18px; }
+    button.primary { background: #2f6fed; color: #fff; border: 0; border-radius: 6px;
+               padding: 10px 20px; font-size: 15px; font-weight: 600; cursor: pointer; }
+    button.primary:hover { background: #2558c8; }
+    button.icon { background: transparent; border: 1px solid #cbd2d9; border-radius: 6px;
+               width: 34px; height: 34px; cursor: pointer; color: #7b8794; font-size: 15px; }
+    .stat { color: #52606d; font-size: 14px; }
+    .stat b { color: #12263f; }
+    a.terms { color: #2f6fed; font-size: 13px; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>Acme Orders</header>
+    <div class="body">
+
+      <div class="field">
+        <label for="cust">Customer name</label>
+        <input type="text" id="cust" placeholder="Full name">
+      </div>
+
+      <div class="field">
+        <label for="country">Country</label>
+        <select id="country">
+          <option>France</option>
+          <option>Germany</option>
+          <option>Spain</option>
+        </select>
+      </div>
+
+      <div class="field check">
+        <input type="checkbox" id="gift" aria-label="Gift wrap">
+        <label for="gift">Gift wrap this order</label>
+      </div>
+
+      <div class="actions">
+        <button type="button" class="primary" data-testid="save-btn"
+                onclick="document.getElementById('saves').textContent =
+                         String(parseInt(document.getElementById('saves').textContent, 10) + 1)">
+          Save order
+        </button>
+        <button type="button" class="icon" aria-label="Delete row" id="ember1234"
+                onclick="document.getElementById('deleted').textContent = 'yes'">&#10005;</button>
+        <span class="stat">saved <b id="saves">0</b> · deleted <b id="deleted">no</b></span>
+      </div>
+
+      <p style="margin:18px 0 0"><a class="terms" href="#terms" role="button">Read terms</a></p>
+    </div>
+  </div>
+
+  <script>window.__demoReady = true;</script>
+</body>
+</html>

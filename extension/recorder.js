@@ -1380,8 +1380,11 @@
   function createPanel(doc, handlers) {
     var panel = doc.createElement("div");
     panel.id = "__rfrecPanel";
+    // 470px: the header row carries 7 controls (collapse/rec/play/+test/export/
+    // clear/stop) — at 400px it wrapped onto two lines and pushed `stop` under
+    // the title (seen in the first recorded demo).
     panel.style.cssText = "position:fixed;z-index:2147483647;right:12px;bottom:12px;" +
-      "width:400px;max-height:55vh;display:flex;flex-direction:column;background:#fff;" +
+      "width:470px;max-height:55vh;display:flex;flex-direction:column;background:#fff;" +
       "border:1px solid #b3b3b3;border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.25);" +
       "font:12px/1.45 -apple-system,Segoe UI,sans-serif;color:#222;overflow:hidden;";
 
@@ -1391,7 +1394,9 @@
     var dot = doc.createElement("span");   // blinking recording indicator
     dot.style.cssText = "width:9px;height:9px;border-radius:50%;background:" + REC_RED +
       ";display:none;flex:0 0 auto;box-shadow:0 0 4px " + REC_RED + ";";
-    var title = doc.createElement("span"); title.style.flex = "1";
+    var title = doc.createElement("span");
+    // nowrap + ellipsis: the title must never push the buttons onto a 2nd row
+    title.style.cssText = "flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
     var btnCollapse = doc.createElement("button");
     var btnRec = doc.createElement("button");
     var btnPlay = doc.createElement("button");
