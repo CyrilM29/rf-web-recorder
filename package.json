@@ -1,0 +1,12 @@
+{
+  "name": "rf-web-recorder",
+  "version": "0.1.0",
+  "description": "Universal test recorder for modern web interfaces that emits Robot Framework code targeting the Browser library (Playwright-based). Framework-agnostic: React, Angular, Vue, Web Components, vanilla. Chrome MV3 extension + standalone console-paste snippet.",
+  "license": "Apache-2.0",
+  "author": "Cyril Montiel",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test \"test/*.test.mjs\"",
+    "package": "node package_extension.mjs"
+  }
+}

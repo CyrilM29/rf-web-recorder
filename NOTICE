@@ -1,0 +1,11 @@
+rf-web-recorder
+Copyright 2026 Cyril Montiel
+
+Licensed under the Apache License, Version 2.0.
+
+The locator core of this project (computed ARIA role calculation,
+accessible-name computation, anchored light-DOM CSS path building,
+the in-page capture/record panel and the recorder event wiring) was
+originally developed by the same author for the SAPFX project (a SAP
+test-automation ecosystem for Robot Framework, Apache-2.0) and was
+ported here, generalized and stripped of all SAP/UI5-specific behaviour.

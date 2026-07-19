@@ -1,0 +1,8 @@
+# Build artefacts (regenerate with `node build.mjs`; extension/recorder.js IS committed)
+dist/
+
+# Never any npm dependencies in this project, but keep the guard anyway
+node_modules/
+
+# Packaged extension archives
+*.zip
