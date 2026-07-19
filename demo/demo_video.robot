@@ -10,6 +10,7 @@ Documentation       Démo scénarisée de rf-web-recorder, ENREGISTRÉE EN VIDÉ
 Library             Browser
 Library             OperatingSystem
 Library             Collections
+Library             Process
 
 Suite Teardown      Close Browser
 
@@ -103,6 +104,7 @@ Record The Demo Video
     # la vidéo n'est écrite qu'à la FERMETURE du contexte
     Close Context
     Rename Video To    rf-web-recorder-demo.webm
+    Convert To Mp4     rf-web-recorder-demo.webm    rf-web-recorder-demo.mp4
 
 
 *** Keywords ***
@@ -151,3 +153,32 @@ Rename Video To
 Video File Exists
     ${files}=    List Files In Directory    ${VIDEO_DIR}    *.webm
     Should Not Be Empty    ${files}    aucun .webm produit par Playwright
+
+Convert To Mp4
+    [Documentation]    Convertit le .webm de Playwright en .mp4 H.264 (le format que
+    ...                LinkedIn accepte). Best-effort : sans ffmpeg sur le poste, on
+    ...                garde le .webm et on l'annonce, sans faire échouer la démo.
+    [Arguments]    ${source}    ${target}
+    ${ffmpeg}=    Resolve Ffmpeg
+    # On teste une LONGUEUR : interpoler un chemin Windows dans une expression
+    # le ferait lire comme des échappements Python (\U…).
+    ${found}=    Get Length    ${ffmpeg}
+    IF    ${found} == 0
+        Log To Console    \n>>> ffmpeg absent — .webm conservé (convertir pour LinkedIn)
+        RETURN
+    END
+    ${result}=    Run Process    ${ffmpeg}    -y    -hide_banner    -loglevel    error
+    ...    -i    ${VIDEO_DIR}/${source}
+    ...    -c:v    libx264    -preset    slow    -crf    22
+    ...    -pix_fmt    yuv420p    -movflags    +faststart    -r    30
+    ...    ${VIDEO_DIR}/${target}
+    Should Be Equal As Integers    ${result.rc}    0    ${result.stderr}
+    ${size}=    Get File Size    ${VIDEO_DIR}/${target}
+    Log To Console    \n>>> MP4 : ${VIDEO_DIR}/${target} (${size} octets)
+
+Resolve Ffmpeg
+    [Documentation]    ffmpeg du PATH, sinon les emplacements connus (installation
+    ...                winget, ou le binaire embarqué par imageio-ffmpeg).
+    ${path}=    Evaluate
+    ...    __import__("shutil").which("ffmpeg") or next((p for p in __import__("glob").glob(__import__("os").path.expanduser("~") + "/AppData/Local/Microsoft/WinGet/Links/ffmpeg.exe")), "") or (__import__("imageio_ffmpeg").get_ffmpeg_exe() if __import__("importlib").util.find_spec("imageio_ffmpeg") else "")
+    RETURN    ${path}
