@@ -6,3 +6,6 @@ node_modules/
 
 # Packaged extension archives
 *.zip
+
+# Local demo material (video generator + fixture page) — not part of the release
+demo/
