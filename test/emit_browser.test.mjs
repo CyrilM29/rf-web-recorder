@@ -307,3 +307,65 @@ test("a named step still wins over its locator", () => {
   });
   assert.ok(pair.resource.includes("Fill User"));
 });
+
+// ---- v0.4.0 fixes ----------------------------------------------------------
+test("rfEscape: RF variable syntax is always literal", () => {
+  assert.equal(rfEscape("Total: ${amount}"), "Total: \\${amount}");
+  assert.equal(rfEscape("@{list} &{dict} %{ENV}"), "\\@{list} \\&{dict} \\%{ENV}");
+  assert.equal(rfEscape("${EMPTY}"), "\\${EMPTY}");   // a recorded literal, not the empty marker
+  assert.equal(rfEscape(""), "${EMPTY}");             // the marker itself still stands in for empty
+});
+test("rfEscape: value mode escapes a would-be named argument", () => {
+  assert.equal(rfEscape("force=True", true), "force\\=True");
+  assert.equal(rfEscape("a = b", true), "a = b");     // space before '=': never a named arg
+  assert.equal(rfEscape("id=q"), "id=q");             // locator mode unchanged
+});
+test("rfEscape: a trailing space after a literal backslash is still escaped", () => {
+  assert.equal(rfEscape("dir\\ "), "dir\\\\\\ ");     // \ doubles, then the space gets its own \
+  assert.equal(rfEscape(" "), "\\ ");                 // leading rule already escaped it — no double
+});
+test("fill with ${...} in the value round-trips as literal text", () => {
+  const line = emitStep({ type: "fill", locator: "id=q", value: "Hello ${name}" })[0];
+  assert.equal(line, "Fill Text    id=q    Hello \\${name}");
+  const back = emit.parseSuite("*** Test Cases ***\nT\n    " + line + "\n");
+  assert.equal(back.steps[0].value, "Hello ${name}");
+});
+test("parseSuite: a column-0 comment is not a test-case name", () => {
+  const parsed = emit.parseSuite("*** Test Cases ***\n# login flow\nMy Test\n    Click    id=a\n");
+  assert.equal(parsed.testName, "My Test");
+  assert.deepEqual(parsed.steps, [{ type: "click", locator: "id=a" }]);
+});
+test("parseSuite: trailing comments, trailing whitespace and tabs are tolerated", () => {
+  const text = "*** Test Cases ***\nT\n" +
+    "    Click    id=a    # note\n" +
+    "    Fill Text\tid=b\tvalue\n" +
+    "    Check Checkbox    id=c   \n";
+  const parsed = emit.parseSuite(text);
+  assert.deepEqual(parsed.skipped, []);
+  assert.deepEqual(parsed.steps.map((s) => s.type), ["click", "fill", "check"]);
+  assert.equal(parsed.steps[1].value, "value");
+});
+test("parseSuite: an escaped trailing space survives the trailing-whitespace strip", () => {
+  const line = emitStep({ type: "fill", locator: "id=q", value: "a " })[0];  // -> a\<space>
+  const parsed = emit.parseSuite("*** Test Cases ***\nT\n    " + line + "\n");
+  assert.equal(parsed.steps[0].value, "a ");
+});
+test("buildResourcePair: a locator named like an Object.prototype member still works", () => {
+  const pair = buildResourcePair({ steps: [{ type: "click", locator: "constructor" }] });
+  assert.ok(pair.resource.includes("${LOC_1_CONSTRUCTOR}    constructor"));
+  assert.ok(!pair.suite.includes("undefined"));
+  assert.ok(pair.suite.includes("Click Constructor"));
+});
+test("buildResourcePair: capture steps get a keyword too — no raw locator in the suite", () => {
+  const pair = buildResourcePair({ steps: [{ type: "capture", locator: "id=hdr", name: "Header" }] });
+  assert.ok(!pair.suite.includes("id=hdr"), "locators must never leak into the test");
+  assert.ok(pair.resource.includes("Get Element    ${LOC_1_HEADER}"));
+  assert.ok(pair.suite.includes("Locate Header"));
+});
+test("buildResourcePair: generated variable references stay live, recorded values escape", () => {
+  const pair = buildResourcePair({
+    steps: [{ type: "fill", locator: "id=q", name: "Query", value: "x${y}" }],
+  });
+  assert.ok(pair.resource.includes("Fill Text    ${LOC_1_QUERY}    ${value}"));
+  assert.ok(pair.suite.includes("Fill Query    x\\${y}"));
+});

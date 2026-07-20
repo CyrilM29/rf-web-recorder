@@ -130,7 +130,9 @@
     }
     if (tag === "input") {
       var t2 = attr(el, "type").toLowerCase();
-      if ((t2 === "button" || t2 === "submit" || t2 === "reset") && el.value) {
+      // != null, not truthiness: a keypad button with value="0" has a name
+      if ((t2 === "button" || t2 === "submit" || t2 === "reset") &&
+          el.value !== undefined && el.value !== null && String(el.value) !== "") {
         return collapse(String(el.value));
       }
     }
@@ -243,22 +245,50 @@
       default: return false; // css-path: structural, checked by construction
     }
   }
+  // Every element of the document INCLUDING open shadow trees: the emitted
+  // Playwright locators pierce open shadow roots, so the uniqueness scan must
+  // look inside them too or a light-DOM-only count of 1 could still resolve
+  // to a different element at replay time.
   function allElements(doc) {
     if (doc && typeof doc.querySelectorAll === "function") {
-      try { return Array.prototype.slice.call(doc.querySelectorAll("*")); } catch (e) { /* fall through */ }
+      try {
+        var out = [];
+        var scopes = [doc];
+        while (scopes.length) {
+          var els = scopes.pop().querySelectorAll("*");
+          for (var i = 0; i < els.length; i++) {
+            out.push(els[i]);
+            if (els[i].shadowRoot) scopes.push(els[i].shadowRoot);
+          }
+        }
+        return out;
+      } catch (e) { /* fall through */ }
     }
-    var out = [];
-    function walk(n) {
-      if (!n) return;
-      out.push(n);
-      var kids = n.children || [];
+    var out2 = [];
+    function walkChildren(n) {
+      var kids = (n && n.children) || [];
       for (var i = 0; i < kids.length; i++) walk(kids[i]);
     }
+    function walk(n) {
+      if (!n) return;
+      out2.push(n);
+      if (n.shadowRoot) walkChildren(n.shadowRoot);
+      walkChildren(n);
+    }
     if (doc && doc.body) walk(doc.body);
-    return out;
+    return out2;
   }
   function countMatches(cand, doc) {
-    if (cand.strategy === "css-path") return 1; // nth-of-type chain from a unique anchor
+    if (cand.strategy === "css-path") {
+      // nth-of-type chain from a unique anchor — verify with the CSS engine
+      // when one is available (a duplicated anchor id would break uniqueness);
+      // a count of 0 means the element sits in a shadow tree plain CSS cannot
+      // see but Playwright's piercing engine can: trust the construction.
+      if (doc && typeof doc.querySelectorAll === "function") {
+        try { return doc.querySelectorAll(cand.selector).length || 1; } catch (e) { /* fall through */ }
+      }
+      return 1;
+    }
     var els = allElements(doc);
     var n = 0;
     for (var i = 0; i < els.length; i++) {

@@ -110,9 +110,12 @@ become ordered steps —
 | press Enter / Tab | `Keyboard Key    press    Enter` |
 | hash / history navigation | `Wait For Load State    load` |
 
-Compaction is automatic: consecutive identical steps dedup, consecutive fills
-on the same field keep only the final value, consecutive load-waits collapse.
-Steps survive page reloads (sessionStorage), are reorderable (↑ ↓) and
+Compaction is automatic: near-simultaneous duplicate steps dedup (a deliberate
+second click on the same button IS kept), consecutive fills on the same field
+keep only the final value, consecutive load-waits collapse. Steps — and the
+recording state — survive page reloads (sessionStorage): after a full-page
+navigation, re-inject (re-paste the snippet or press `Alt+Shift+U`) and
+recording resumes where it left off. Steps are reorderable (↑ ↓) and
 deletable (✕) in the panel, and the test name is editable.
 
 **In-panel replay** (`play` button): the recorded steps replay sequentially
@@ -124,9 +127,10 @@ count). Each step's element is highlighted as it runs and the current row is
 marked in the panel; a failure stops the replay, marks the row red and names
 the reason in the hint line; success shows `replay OK (N steps)`. `Esc`
 cancels a running replay. Replay never records its own synthetic events.
-Honest caveat: values are set directly on the DOM — frameworks that only
-trust native user gestures (e.g. React controlled inputs) may ignore them;
-the exported suite replays through the real Browser library either way.
+Fills go through the element's **native value setter** with real focus, so
+controlled inputs (React & co) see them; frameworks that only trust genuine
+user gestures may still ignore synthetic clicks — the exported suite replays
+through the real Browser library either way.
 
 **In-place editing**: double-click any step row to edit it inline — the value
 for value-bearing steps (fill / select / assertions), otherwise the key
@@ -275,9 +279,15 @@ just happens to satisfy the same interface at runtime.
   recorded again — harmless on replay, delete the extra step in the panel.
 - Pressing Enter on a focused button records both the key press and the
   browser-synthesized click.
+- A full-page navigation unloads the recorder: steps AND the recording state
+  are kept, but the recorder must be re-injected (`Alt+Shift+U` or snippet
+  re-paste) before the next interactions are captured.
+- `<input type="file">` changes are not recorded — a real upload needs a
+  hand-written `Upload File By Selector`.
 - Cross-origin iframes get their own panel only in extension mode (the snippet
   cannot cross origins; the extension injects with `allFrames` where allowed).
-- Locator uniqueness is evaluated at capture time on the current DOM state.
+- Locator uniqueness is evaluated at capture time on the current DOM state
+  (open shadow roots included).
 
 ## License
 

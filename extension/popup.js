@@ -34,12 +34,9 @@ async function runInPage(tabId, func) {
 }
 
 async function ensureInjected(tabId) {
-  const loaded = await runInPage(tabId, () => !!window.__RFREC);
-  if (loaded) {
-    await runInPage(tabId, () => { window.__RFREC.start(); return true; });
-    return;
-  }
-  // bridge (ISOLATED) for the badge, then the recorder bundle (MAIN world)
+  // Always inject, allFrames: both files are idempotent (already-loaded frames
+  // just re-call start()), and iframes added since the last injection get
+  // instrumented too. Bridge (ISOLATED) for the badge, recorder bundle (MAIN).
   await api.scripting.executeScript({ target: { tabId, allFrames: true }, files: ["bridge.js"] });
   await api.scripting.executeScript({ target: { tabId, allFrames: true }, world: "MAIN", files: ["recorder.js"] });
 }

@@ -25,6 +25,7 @@
   var STORE_KEY = "__rfrecSteps";
   var NAME_KEY = "__rfrecName";
   var URL_KEY = "__rfrecUrl";
+  var REC_KEY = "__rfrecRecording";
   var DEFAULT_NAME = "Recorded Scenario";
   var REPLAY_DELAY = 350;   // ms between replayed steps
   var HINT_CAPTURE = "Hover + click to capture a locator. rec to record, play to replay. Esc to stop.";
@@ -69,15 +70,38 @@
         }
       } catch (e) { /* ignore */ }
     }
+    // The recording FLAG survives navigation too: after a reload + re-injection
+    // (snippet re-paste or extension shortcut) recording resumes by itself
+    // instead of silently dropping every interaction until the user notices.
+    function saveRecording() {
+      try { global.sessionStorage.setItem(REC_KEY, recording ? "1" : ""); } catch (e) { /* ignore */ }
+    }
+    function loadRecording() {
+      try { return global.sessionStorage.getItem(REC_KEY) === "1"; } catch (e) { return false; }
+    }
 
     // ---- helpers -----------------------------------------------------------
     function copy(text, btn) {
-      try { if (global.navigator.clipboard) global.navigator.clipboard.writeText(text); } catch (e) { /* ignore */ }
-      if (btn) {
-        var t = btn.textContent;
-        btn.textContent = "copied";
-        setTimeout(function () { btn.textContent = t; }, 700);
+      function flash(label) {
+        if (!btn) return;
+        if (btn.__rfrecLabel === undefined) btn.__rfrecLabel = btn.textContent;
+        btn.textContent = label;
+        setTimeout(function () { btn.textContent = btn.__rfrecLabel; }, 700);
       }
+      // writeText rejects async (unfocused document, cross-origin iframe
+      // permissions policy...) — a sync try/catch cannot see it, and the
+      // button must not claim "copied" when nothing was.
+      try {
+        if (global.navigator.clipboard) {
+          var p = global.navigator.clipboard.writeText(text);
+          if (p && typeof p.then === "function") {
+            p.then(function () { flash("copied"); },
+                   function () { flash("copy failed"); });
+            return;
+          }
+        }
+        flash("copied");
+      } catch (e) { flash("copy failed"); }
     }
     // Our own transient DOM helpers (download anchor, import file input) are
     // parented to the PANEL, never to documentElement: their synthetic .click()
@@ -156,9 +180,22 @@
     }
 
     // ---- click: capture (inspect) or record (step) -------------------------
+    // The floating menu closes itself on MOUSEDOWN (panel.js onAway); by the
+    // time the paired click event reaches us, isOpen() is already false — so
+    // the dismissal is remembered here and the click that follows is swallowed
+    // instead of being recorded/captured as a spurious step.
+    var menuDismissedAt = 0;
+    function onMouseDown(event) {
+      if (replaying) return;
+      if (menu && menu.isOpen() && !menu.contains(event.target)) menuDismissedAt = Date.now();
+    }
     function onClick(event) {
       if (replaying) return;                          // never record replayed events
       if (inOurUI(event.target)) return;              // panel/menu handle their own clicks
+      if (menuDismissedAt && Date.now() - menuDismissedAt < 1000) {
+        menuDismissedAt = 0;
+        return;                                       // this click only dismissed the menu
+      }
       if (menu && menu.isOpen()) { menu.close(); return; }
       var target = event.target && event.target.nodeType === 1 ? event.target : null;
       if (!target) return;
@@ -167,7 +204,7 @@
         var type = String((target.getAttribute && target.getAttribute("type")) || "").toLowerCase();
         if (tag === "input" && (type === "checkbox" || type === "radio")) return; // change handles those
         var best = bestFor(target);
-        addStep(stepFields("click", best));
+        addStep(stepFields("click", best, { t: Date.now() }));  // t: dedup window for deliberate repeats
         return;                                       // never block the app while recording
       }
       // capture mode: inspection only — swallow the click
@@ -204,9 +241,13 @@
       }
       if (tag === "input" && type === "radio") {
         best = bestFor(t);
-        addStep(stepFields("click", best));
+        addStep(stepFields("click", best, { t: Date.now() }));
         return;
       }
+      // File inputs have no replayable value (C:\fakepath\...) and assigning
+      // one at replay time throws — a real upload needs Upload File By
+      // Selector written by hand, so nothing useful can be recorded here.
+      if (tag === "input" && type === "file") return;
       if ((tag === "input" || tag === "textarea") && "value" in t) {
         best = bestFor(t);
         // Passwords never reach the export/clipboard/sessionStorage in clear text.
@@ -235,9 +276,15 @@
         // the key immediately put it BEFORE the fill it actually followed —
         // replaying that pressed Enter on an empty field, then filled it.
         // Caught by the first visible-browser demo run.
-        setTimeout(function () { addStep({ type: "press", key: event.key }); }, 0);
+        // Kept in `pendingPress` so onBeforeUnload can flush it if Enter
+        // triggers a full-page submit and the page unloads before the tick.
+        pendingPress = { type: "press", key: event.key };
+        setTimeout(function () {
+          if (pendingPress) { var p = pendingPress; pendingPress = null; addStep(p); }
+        }, 0);
       }
     }
+    var pendingPress = null;
 
     // ---- right-click assertion menu (record mode only) ---------------------
     function candidateCount(best) {
@@ -274,7 +321,12 @@
 
     // ---- navigation -> replayable wait -------------------------------------
     function onNav() { if (recording && !replaying) addStep({ type: "wait-load" }); }
-    function onBeforeUnload() { if (recording && !replaying) { stepsCore.addStep(steps, { type: "wait-load" }); saveSteps(); } }
+    function onBeforeUnload() {
+      if (!recording || replaying) return;
+      if (pendingPress) { stepsCore.addStep(steps, pendingPress); pendingPress = null; } // the Enter that submitted
+      stepsCore.addStep(steps, { type: "wait-load" });
+      saveSteps();
+    }
 
     // ---- in-panel replay ---------------------------------------------------
     // Steps replay sequentially (REPLAY_DELAY ms apart) against the live DOM:
@@ -297,6 +349,27 @@
       try { ev = new KeyboardEvent(type, { bubbles: true, cancelable: true, key: key }); }
       catch (e) { ev = doc.createEvent("Events"); ev.initEvent(type, true, true); ev.key = key; }
       el.dispatchEvent(ev);
+    }
+    function tryFocus(el) {
+      try { if (el && typeof el.focus === "function") el.focus(); } catch (e) { /* ignore */ }
+    }
+    // Assign through the NATIVE prototype setter: React's controlled inputs
+    // track the last value set via the native accessor and dedupe `input`
+    // events whose value "didn't change" — a plain el.value = x is exactly
+    // what gets deduped, so fills silently no-oped on React apps.
+    function setNativeValue(el, value) {
+      var proto = null;
+      try {
+        if (global.HTMLInputElement && el instanceof global.HTMLInputElement) proto = global.HTMLInputElement.prototype;
+        else if (global.HTMLTextAreaElement && el instanceof global.HTMLTextAreaElement) proto = global.HTMLTextAreaElement.prototype;
+      } catch (e) { /* duck-typed doc in tests */ }
+      if (proto) {
+        try {
+          var desc = Object.getOwnPropertyDescriptor(proto, "value");
+          if (desc && desc.set) { desc.set.call(el, value); return; }
+        } catch (e) { /* fall through */ }
+      }
+      el.value = value;
     }
     function highlightElement(el, label) {
       if (!overlay || !el || typeof el.getBoundingClientRect !== "function") return;
@@ -328,10 +401,15 @@
       highlightElement(el, stepLine(st));
       switch (plan.action) {
         case "click":
-          synthMouse(el, "mousedown"); synthMouse(el, "mouseup"); synthMouse(el, "click");
+          // focus between down and up, like a native click — so a recorded
+          // press that follows lands on this element, not on <body>
+          synthMouse(el, "mousedown");
+          tryFocus(el);
+          synthMouse(el, "mouseup"); synthMouse(el, "click");
           break;
         case "fill":
-          el.value = plan.value;
+          tryFocus(el);
+          setNativeValue(el, plan.value);
           synthEvent(el, "input"); synthEvent(el, "change");
           break;
         case "select": {
@@ -409,8 +487,14 @@
       if (format === "resource-pair") {
         var pair = target.buildResourcePair(opts);
         download(pair.resource, pair.resourceName);
-        download(pair.suite, fileSlug() + ".robot");
+        // Chrome's multiple-download protection targets same-task downloads:
+        // spacing the second one out gives the user a visible prompt instead
+        // of a silently missing .robot — and the hint says to expect 2 files.
+        setTimeout(function () { download(pair.suite, fileSlug() + ".robot"); }, 350);
         copy(pair.suite);
+        if (panel) {
+          panel.setHint("Exporting 2 files (.resource + .robot) — allow multiple downloads if the browser asks.");
+        }
       } else if (format === "body") {
         copy(target.emitBody(steps));
       } else {
@@ -495,6 +579,7 @@
     function setRecording(on) {
       if (!running && on) start();
       recording = !!on;
+      saveRecording();
       if (on) rememberUrl();
       if (panel) {
         panel.setRecording(recording);
@@ -538,6 +623,7 @@
       panel.setHint(HINT_CAPTURE);
       renderPanel();
       doc.addEventListener("mousemove", onMove, true);
+      doc.addEventListener("mousedown", onMouseDown, true);
       doc.addEventListener("click", onClick, true);
       doc.addEventListener("change", onChange, true);
       doc.addEventListener("keydown", onKey, true);
@@ -545,6 +631,7 @@
       global.addEventListener("hashchange", onNav, true);
       global.addEventListener("popstate", onNav, true);
       global.addEventListener("beforeunload", onBeforeUnload, true);
+      if (loadRecording()) setRecording(true);   // recording survives navigation + re-injection
       console.info("[rf-web-recorder] Ready. Hover to highlight, click to capture, rec to record, " +
         "play to replay, +test to start a new test case. " +
         "Right-click while recording opens the assertion menu. Esc stops.");
@@ -554,7 +641,9 @@
       cancelReplay(null);
       running = false;
       recording = false;
+      saveRecording();                            // an explicit stop does not auto-resume later
       doc.removeEventListener("mousemove", onMove, true);
+      doc.removeEventListener("mousedown", onMouseDown, true);
       doc.removeEventListener("click", onClick, true);
       doc.removeEventListener("change", onChange, true);
       doc.removeEventListener("keydown", onKey, true);

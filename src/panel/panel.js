@@ -19,6 +19,7 @@
 
   // ---- hover highlight overlay ---------------------------------------------
   function createOverlay(doc) {
+    var flashTimer = 0, flashOrig = "";
     var box = doc.createElement("div");
     box.style.cssText = "position:fixed;z-index:2147483646;pointer-events:none;" +
       "border:2px solid " + ACCENT + ";background:rgba(79,70,229,0.10);border-radius:2px;" +
@@ -43,11 +44,21 @@
       },
       hide: function () { box.style.display = "none"; chip.style.display = "none"; },
       flash: function () {
-        var orig = box.style.background;
+        // Snapshot the resting background only when idle: two overlapping
+        // flashes (fill + deferred press arrive in one tick) would otherwise
+        // snapshot the green and restore green — permanently.
+        if (flashTimer) clearTimeout(flashTimer);
+        else flashOrig = box.style.background;
         box.style.background = "rgba(22,163,74,0.25)";
-        setTimeout(function () { box.style.background = orig; }, 150);
+        flashTimer = setTimeout(function () {
+          box.style.background = flashOrig;
+          flashTimer = 0;
+        }, 150);
       },
-      destroy: function () { box.remove(); chip.remove(); },
+      destroy: function () {
+        if (flashTimer) { clearTimeout(flashTimer); flashTimer = 0; }
+        box.remove(); chip.remove();
+      },
     };
   }
 
@@ -216,6 +227,9 @@
     }
     function onDragMove(e) {
       if (!drag) return;
+      // mouseup outside the window never reaches us: a move with no button
+      // held means the drag already ended — stop following the cursor.
+      if (e.buttons === 0) { drag = null; return; }
       panel.style.left = (e.clientX - drag.dx) + "px";
       panel.style.top = (e.clientY - drag.dy) + "px";
     }

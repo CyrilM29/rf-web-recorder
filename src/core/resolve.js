@@ -31,19 +31,36 @@
   var collapse = locators.collapse;
 
   // ---- duck-typed document scan (mirror of locators.js allElements) --------
+  // Pierces open shadow roots like the Playwright engines the recorded
+  // locators target — replay must resolve what the export will resolve.
   function allElements(doc) {
     if (doc && typeof doc.querySelectorAll === "function") {
-      try { return Array.prototype.slice.call(doc.querySelectorAll("*")); } catch (e) { /* fall through */ }
+      try {
+        var out = [];
+        var scopes = [doc];
+        while (scopes.length) {
+          var els = scopes.pop().querySelectorAll("*");
+          for (var i = 0; i < els.length; i++) {
+            out.push(els[i]);
+            if (els[i].shadowRoot) scopes.push(els[i].shadowRoot);
+          }
+        }
+        return out;
+      } catch (e) { /* fall through */ }
     }
-    var out = [];
-    function walk(n) {
-      if (!n) return;
-      out.push(n);
-      var kids = n.children || [];
+    var out2 = [];
+    function walkChildren(n) {
+      var kids = (n && n.children) || [];
       for (var i = 0; i < kids.length; i++) walk(kids[i]);
     }
+    function walk(n) {
+      if (!n) return;
+      out2.push(n);
+      if (n.shadowRoot) walkChildren(n.shadowRoot);
+      walkChildren(n);
+    }
     if (doc && doc.body) walk(doc.body);
-    return out;
+    return out2;
   }
   function attrOf(el, name) {
     try {

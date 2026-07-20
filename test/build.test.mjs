@@ -33,8 +33,11 @@ test("build() writes both bundles with the expected markers", () => {
 
 test("extension manifest is valid MV3 JSON with the expected surface", () => {
   const manifest = JSON.parse(readFileSync(path.join(ROOT, "extension", "manifest.json"), "utf8"));
+  const pkg = JSON.parse(readFileSync(path.join(ROOT, "package.json"), "utf8"));
   assert.equal(manifest.manifest_version, 3);
-  assert.equal(manifest.version, "0.3.2");
+  assert.equal(manifest.version, pkg.version, "manifest and package.json versions must match");
+  assert.ok(manifest.description.length <= 132, "Chrome Web Store caps description at 132 chars");
+  assert.equal(manifest.minimum_chrome_version, "111", "scripting world MAIN needs Chrome 111+");
   assert.ok(manifest.permissions.includes("scripting"));
   assert.ok(manifest.permissions.includes("activeTab"));
   assert.equal(manifest.background.service_worker, "background.js");
@@ -66,6 +69,10 @@ test("Enter/Tab capture is deferred so a field's change lands first", () => {
   // Live find (visible demo): `change` fires on blur, i.e. after the keydown —
   // recording the key immediately emitted `Keyboard Key press Tab` BEFORE the
   // `Fill Text` it actually followed, which broke replay on Enter-submits.
+  // The deferred step is parked in pendingPress so onBeforeUnload can still
+  // flush it when Enter triggers a full-page submit before the tick runs.
   const bundle = readFileSync(path.join(ROOT, "dist", "recorder_snippet.js"), "utf8");
-  assert.match(bundle, /setTimeout\(function \(\) \{ addStep\(\{ type: "press", key: event\.key \}\); \}, 0\)/);
+  assert.match(bundle, /pendingPress = \{ type: "press", key: event\.key \};/);
+  assert.match(bundle, /if \(pendingPress\) \{ var p = pendingPress; pendingPress = null; addStep\(p\); \}/);
+  assert.match(bundle, /if \(pendingPress\) \{ stepsCore\.addStep\(steps, pendingPress\); pendingPress = null; \}/);
 });

@@ -110,3 +110,30 @@ test("compact() keeps markers in place", () => {
   assert.deepEqual(out.map((s) => s.type), ["fill", "test", "fill"]);
   assert.equal(out[1].name, "Second");
 });
+
+// ---- v0.4.0: click dedup is time-aware -------------------------------------
+test("two identical clicks far apart in time are BOTH kept (deliberate repeat)", () => {
+  const steps = [];
+  addStep(steps, { type: "click", locator: "id=plus", t: 1000 });
+  assert.equal(addStep(steps, { type: "click", locator: "id=plus", t: 2000 }), true);
+  assert.equal(steps.length, 2);
+});
+test("two identical clicks within the dedup window collapse (double dispatch)", () => {
+  const steps = [];
+  addStep(steps, { type: "click", locator: "id=plus", t: 1000 });
+  assert.equal(addStep(steps, { type: "click", locator: "id=plus", t: 1100 }), false);
+  assert.equal(steps.length, 1);
+});
+test("identical clicks without timestamps still dedupe (legacy/imported steps)", () => {
+  const steps = [];
+  addStep(steps, click("id=a"));
+  assert.equal(addStep(steps, click("id=a")), false);
+  assert.equal(steps.length, 1);
+});
+test("compact() preserves deliberate timed repeats", () => {
+  const kept = compact([
+    { type: "click", locator: "id=plus", t: 1000 },
+    { type: "click", locator: "id=plus", t: 2000 },
+  ]);
+  assert.equal(kept.length, 2);
+});

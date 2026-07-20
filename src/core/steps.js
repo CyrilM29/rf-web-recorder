@@ -11,7 +11,9 @@
  *        multiple test cases)
  *
  * Compaction rules (applied on append, and again by compact()):
- *   - consecutive identical steps are deduped;
+ *   - consecutive identical steps are deduped — except two identical CLICKS
+ *     whose timestamps (`t`, ms) are far enough apart: clicking a "+" stepper
+ *     twice is intent, the dedup only guards against double-dispatched events;
  *   - consecutive `fill` steps on the same locator keep only the LAST value
  *     (typing emits many change events — only the final value matters);
  *   - consecutive `wait-load` steps collapse to one;
@@ -37,12 +39,22 @@
   }
   function isSame(a, b) { return !!a && !!b && stepKey(a) === stepKey(b); }
 
+  // Two identical consecutive clicks recorded this close together are one
+  // double-dispatched event; further apart they are a deliberate repeat.
+  var CLICK_DEDUP_WINDOW_MS = 500;
+
   // Appends `step` to `steps` in place, applying the compaction rules.
   // Returns true when the list changed (append or replace), false on drop.
   function addStep(steps, step) {
     if (step && step.type === "test") { steps.push(step); return true; } // scenario markers always pass through
     var last = steps.length ? steps[steps.length - 1] : null;
-    if (isSame(last, step)) return false;                       // consecutive identical: drop
+    if (isSame(last, step)) {                                   // consecutive identical: drop...
+      var timedClicks = step.type === "click" &&
+        typeof step.t === "number" && typeof last.t === "number";
+      if (!timedClicks || step.t - last.t < CLICK_DEDUP_WINDOW_MS) return false;
+      steps.push(step);                                         // ...unless it is a deliberate repeat
+      return true;
+    }
     if (step.type === "fill" && last && last.type === "fill" &&
         last.locator === step.locator) {
       steps[steps.length - 1] = step;                           // same field: keep last value

@@ -114,11 +114,15 @@ deviennent des steps ordonnés —
 | Entrée / Tab | `Keyboard Key    press    Enter` |
 | navigation hash / historique | `Wait For Load State    load` |
 
-La compaction est automatique : les steps identiques consécutifs sont dédoublonnés,
-les saisies consécutives sur le même champ ne gardent que la valeur finale, les
-attentes de chargement consécutives fusionnent. Les steps survivent aux
-rechargements de page (sessionStorage), se réordonnent (↑ ↓) et se suppriment
-(✕) dans le panneau ; le nom du test est éditable.
+La compaction est automatique : les doublons quasi simultanés sont
+dédoublonnés (un second clic VOLONTAIRE sur le même bouton est conservé), les
+saisies consécutives sur le même champ ne gardent que la valeur finale, les
+attentes de chargement consécutives fusionnent. Les steps — et l'état
+d'enregistrement — survivent aux rechargements de page (sessionStorage) :
+après une navigation complète, ré-injectez (recollez le snippet ou
+`Alt+Shift+U`) et l'enregistrement reprend où il en était. Les steps se
+réordonnent (↑ ↓) et se suppriment (✕) dans le panneau ; le nom du test est
+éditable.
 
 **Rejeu dans le panneau** (bouton `play`) : les steps enregistrés se rejouent
 séquentiellement (~350 ms d'intervalle) sur la page vivante — les clics
@@ -130,10 +134,11 @@ L'élément de chaque step est surligné pendant l'exécution et la ligne couran
 est marquée dans le panneau ; un échec arrête le rejeu, marque la ligne en
 rouge et nomme la raison dans la ligne d'indice ; un succès affiche
 `replay OK (N steps)`. `Échap` annule un rejeu en cours. Le rejeu n'enregistre
-jamais ses propres événements synthétiques. Limite assumée : les valeurs sont
-posées directement sur le DOM — les frameworks qui n'acceptent que les vrais
-gestes utilisateur (inputs contrôlés React, par exemple) peuvent les ignorer ;
-la suite exportée, elle, se rejoue via la vraie bibliothèque Browser.
+jamais ses propres événements synthétiques. Les saisies passent par le
+**setter natif** de l'élément avec un vrai focus, donc les inputs contrôlés
+(React et consorts) les voient ; les frameworks qui n'acceptent que les
+gestes authentiques peuvent encore ignorer les clics synthétiques — la suite
+exportée, elle, se rejoue via la vraie bibliothèque Browser.
 
 **Édition sur place** : double-cliquez sur une ligne de step pour l'éditer en
 ligne — la valeur pour les steps qui en portent une (saisie / select /
@@ -289,11 +294,17 @@ vrai DOM se trouve simplement satisfaire la même interface à l'exécution.
   dans le panneau.
 - Entrée sur un bouton focalisé enregistre la touche ET le clic synthétisé par
   le navigateur.
+- Une navigation complète décharge l'enregistreur : les steps ET l'état
+  d'enregistrement sont conservés, mais il faut le ré-injecter (`Alt+Shift+U`
+  ou re-coller le snippet) avant que les interactions suivantes soient
+  capturées.
+- Les changements d'un `<input type="file">` ne sont pas enregistrés — un vrai
+  upload demande un `Upload File By Selector` écrit à la main.
 - Les iframes cross-origin n'ont leur panneau qu'en mode extension (le snippet
   ne franchit pas les origines ; l'extension injecte en `allFrames` là où c'est
   permis).
 - L'unicité d'un localisateur est évaluée au moment de la capture, sur l'état
-  courant du DOM.
+  courant du DOM (shadow roots ouverts compris).
 
 ## Licence
 

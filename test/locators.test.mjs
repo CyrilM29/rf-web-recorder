@@ -191,3 +191,17 @@ test("countMatches: counts role+name pairs across the document", () => {
   const cand = candidatesFor(b1, doc).find((c) => c.strategy === "role");
   assert.equal(countMatches(cand, doc), 2);
 });
+
+// ---- v0.4.0 fixes ----------------------------------------------------------
+test("accName: input button with value '0' keeps its name", () => {
+  assert.equal(accName(el("input", { attrs: { type: "button" }, value: "0" })), "0");
+});
+test("countMatches sees elements inside open shadow roots", () => {
+  const host = el("div");
+  const inner = el("button", { text: "Save" });
+  host.shadowRoot = { children: [inner] };
+  const light = el("button", { text: "Save" });
+  const doc = makeDoc(host, light);
+  // one match in the light DOM, one inside the shadow root: NOT unique
+  assert.equal(countMatches({ strategy: "role", role: "button", name: "Save" }, doc), 2);
+});

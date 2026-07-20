@@ -1,5 +1,5 @@
 /*
- * rf-web-recorder v0.3.2 — universal Robot Framework Browser-library recorder.
+ * rf-web-recorder v0.4.0 — universal Robot Framework Browser-library recorder.
  *
  * Hover to highlight + click to capture locators; « rec » records your
  * interactions as replayable Browser-library keywords; « play » replays the
@@ -150,7 +150,9 @@
     }
     if (tag === "input") {
       var t2 = attr(el, "type").toLowerCase();
-      if ((t2 === "button" || t2 === "submit" || t2 === "reset") && el.value) {
+      // != null, not truthiness: a keypad button with value="0" has a name
+      if ((t2 === "button" || t2 === "submit" || t2 === "reset") &&
+          el.value !== undefined && el.value !== null && String(el.value) !== "") {
         return collapse(String(el.value));
       }
     }
@@ -263,22 +265,50 @@
       default: return false; // css-path: structural, checked by construction
     }
   }
+  // Every element of the document INCLUDING open shadow trees: the emitted
+  // Playwright locators pierce open shadow roots, so the uniqueness scan must
+  // look inside them too or a light-DOM-only count of 1 could still resolve
+  // to a different element at replay time.
   function allElements(doc) {
     if (doc && typeof doc.querySelectorAll === "function") {
-      try { return Array.prototype.slice.call(doc.querySelectorAll("*")); } catch (e) { /* fall through */ }
+      try {
+        var out = [];
+        var scopes = [doc];
+        while (scopes.length) {
+          var els = scopes.pop().querySelectorAll("*");
+          for (var i = 0; i < els.length; i++) {
+            out.push(els[i]);
+            if (els[i].shadowRoot) scopes.push(els[i].shadowRoot);
+          }
+        }
+        return out;
+      } catch (e) { /* fall through */ }
     }
-    var out = [];
-    function walk(n) {
-      if (!n) return;
-      out.push(n);
-      var kids = n.children || [];
+    var out2 = [];
+    function walkChildren(n) {
+      var kids = (n && n.children) || [];
       for (var i = 0; i < kids.length; i++) walk(kids[i]);
     }
+    function walk(n) {
+      if (!n) return;
+      out2.push(n);
+      if (n.shadowRoot) walkChildren(n.shadowRoot);
+      walkChildren(n);
+    }
     if (doc && doc.body) walk(doc.body);
-    return out;
+    return out2;
   }
   function countMatches(cand, doc) {
-    if (cand.strategy === "css-path") return 1; // nth-of-type chain from a unique anchor
+    if (cand.strategy === "css-path") {
+      // nth-of-type chain from a unique anchor — verify with the CSS engine
+      // when one is available (a duplicated anchor id would break uniqueness);
+      // a count of 0 means the element sits in a shadow tree plain CSS cannot
+      // see but Playwright's piercing engine can: trust the construction.
+      if (doc && typeof doc.querySelectorAll === "function") {
+        try { return doc.querySelectorAll(cand.selector).length || 1; } catch (e) { /* fall through */ }
+      }
+      return 1;
+    }
     var els = allElements(doc);
     var n = 0;
     for (var i = 0; i < els.length; i++) {
@@ -329,7 +359,9 @@
  *        multiple test cases)
  *
  * Compaction rules (applied on append, and again by compact()):
- *   - consecutive identical steps are deduped;
+ *   - consecutive identical steps are deduped — except two identical CLICKS
+ *     whose timestamps (`t`, ms) are far enough apart: clicking a "+" stepper
+ *     twice is intent, the dedup only guards against double-dispatched events;
  *   - consecutive `fill` steps on the same locator keep only the LAST value
  *     (typing emits many change events — only the final value matters);
  *   - consecutive `wait-load` steps collapse to one;
@@ -355,12 +387,22 @@
   }
   function isSame(a, b) { return !!a && !!b && stepKey(a) === stepKey(b); }
 
+  // Two identical consecutive clicks recorded this close together are one
+  // double-dispatched event; further apart they are a deliberate repeat.
+  var CLICK_DEDUP_WINDOW_MS = 500;
+
   // Appends `step` to `steps` in place, applying the compaction rules.
   // Returns true when the list changed (append or replace), false on drop.
   function addStep(steps, step) {
     if (step && step.type === "test") { steps.push(step); return true; } // scenario markers always pass through
     var last = steps.length ? steps[steps.length - 1] : null;
-    if (isSame(last, step)) return false;                       // consecutive identical: drop
+    if (isSame(last, step)) {                                   // consecutive identical: drop...
+      var timedClicks = step.type === "click" &&
+        typeof step.t === "number" && typeof last.t === "number";
+      if (!timedClicks || step.t - last.t < CLICK_DEDUP_WINDOW_MS) return false;
+      steps.push(step);                                         // ...unless it is a deliberate repeat
+      return true;
+    }
     if (step.type === "fill" && last && last.type === "fill" &&
         last.locator === step.locator) {
       steps[steps.length - 1] = step;                           // same field: keep last value
@@ -421,44 +463,65 @@
   var SEP = "    "; // Robot Framework argument separator (4 spaces)
 
   // Escape a value so it survives Robot Framework's plain-text parsing:
-  // backslashes, control chars, runs of 2+ spaces (token separators), and
-  // leading '#' (comment) / leading-trailing spaces (stripped) are protected.
-  function rfEscape(value) {
+  // backslashes, control chars, variable syntax (${ @{ &{ %{), runs of 2+
+  // spaces (token separators), and leading '#' (comment) / leading-trailing
+  // spaces (stripped) are protected. With `isValue`, a leading "word=" is also
+  // escaped so a recorded value can never turn into a named argument (Browser
+  // keywords have parameters like force/txt — `force=True` as a literal value
+  // would otherwise be swallowed as `force=` and the call would lose it).
+  function rfEscape(value, isValue) {
     if (value === undefined || value === null) return "${EMPTY}";
     var s = String(value);
     if (s === "") return "${EMPTY}";
     s = s.replace(/\\/g, "\\\\");
     s = s.replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t");
+    s = s.replace(/([$@&%])\{/g, "\\$1{");   // recorded text is always literal, never a live RF variable
     s = s.replace(/ ( +)/g, function (m, extra) {
       return " " + extra.replace(/ /g, "\\ ");                 // "a  b" -> "a \ b"
     });
     if (s.charAt(0) === " ") s = "\\" + s;
     if (s.charAt(0) === "#") s = "\\" + s;
-    if (s.length > 1 && s.charAt(s.length - 1) === " " && s.charAt(s.length - 2) !== "\\") {
-      s = s.slice(0, -1) + "\\ ";
+    if (s.charAt(s.length - 1) === " ") {
+      // An odd number of backslashes before the final space means it is
+      // already escaped (doubling made literal backslashes come in pairs).
+      var bs = /\\*(?= $)/.exec(s)[0].length;
+      if (bs % 2 === 0) s = s.slice(0, -1) + "\\ ";
     }
+    if (isValue) s = s.replace(/^([A-Za-z_][A-Za-z0-9_]*)=/, "$1\\=");
     return s;
   }
 
   // One step -> one (or zero) Browser-library keyword line, no indentation.
-  function emitStep(step) {
-    var loc = rfEscape(step.locator);
+  // `esc` (default rfEscape) lets the resource-pair builder keep its generated
+  // ${...} variable references live while recorded values still escape.
+  function emitStep(step, esc) {
+    var E = esc || rfEscape;
+    var loc = E(step.locator);
     switch (step.type) {
       case "click": return ["Click" + SEP + loc];
-      case "fill": return ["Fill Text" + SEP + loc + SEP + rfEscape(step.value)];
-      case "select": return ["Select Options By" + SEP + loc + SEP + "label" + SEP + rfEscape(step.value)];
+      case "fill": return ["Fill Text" + SEP + loc + SEP + E(step.value, true)];
+      case "select": return ["Select Options By" + SEP + loc + SEP + "label" + SEP + E(step.value, true)];
       case "check": return ["Check Checkbox" + SEP + loc];
       case "uncheck": return ["Uncheck Checkbox" + SEP + loc];
-      case "press": return ["Keyboard Key" + SEP + "press" + SEP + rfEscape(step.key)];
+      case "press": return ["Keyboard Key" + SEP + "press" + SEP + E(step.key, true)];
       case "wait-load": return ["Wait For Load State" + SEP + "load"];
       case "assert-visible": return ["Get Element States" + SEP + loc + SEP + "contains" + SEP + "visible"];
-      case "assert-text": return ["Get Text" + SEP + loc + SEP + "==" + SEP + rfEscape(step.value)];
-      case "assert-value": return ["Get Property" + SEP + loc + SEP + "value" + SEP + "==" + SEP + rfEscape(step.value)];
-      case "assert-count": return ["Get Element Count" + SEP + loc + SEP + "==" + SEP + rfEscape(step.value)];
+      case "assert-text": return ["Get Text" + SEP + loc + SEP + "==" + SEP + E(step.value, true)];
+      case "assert-value": return ["Get Property" + SEP + loc + SEP + "value" + SEP + "==" + SEP + E(step.value, true)];
+      case "assert-count": return ["Get Element Count" + SEP + loc + SEP + "==" + SEP + E(step.value, true)];
       case "capture": return ["Get Element" + SEP + loc];
       case "test": return ["# --- Test: " + (step.name || "Test") + " ---"]; // scenario marker (comment in a body paste)
       default: return [];
     }
+  }
+
+  // rfEscape variant for resource-pair keyword bodies: our generated variable
+  // references (${LOC_...}, ${value}, ...) must stay live; anything else —
+  // i.e. every recorded value — escapes normally.
+  function refEscape(v, isValue) {
+    var s = String(v === undefined || v === null ? "" : v);
+    if (/^\$\{[A-Za-z_][A-Za-z0-9_]*\}$/.test(s)) return s;
+    return rfEscape(v, isValue);
   }
 
   // ---- scenario split ------------------------------------------------------
@@ -554,6 +617,7 @@
     "assert-text": { name: function (h) { return h + " Text Should Be"; }, arg: true, argName: "expected" },
     "assert-value": { name: function (h) { return h + " Value Should Be"; }, arg: true, argName: "expected" },
     "assert-count": { name: function (h) { return h + " Count Should Be"; }, arg: true, argName: "expected" },
+    "capture": { name: function (h) { return "Locate " + h; }, arg: false },
   };
 
   // A step deserves a CSS fallback branch when its recorded CSS path exists,
@@ -571,7 +635,9 @@
 
     // 1. distinct locators -> ${LOC_<N>_<SLUG>} variables
     //    (+ ${LOC_<N>_<SLUG>_FALLBACK} when a distinct CSS path was recorded)
-    var varByLocator = {};
+    // Object.create(null): a locator spelled like an Object.prototype member
+    // ("constructor", "toString"...) must not hit an inherited property.
+    var varByLocator = Object.create(null);
     var varOrder = [];
     var n = 0;
     steps.forEach(function (st) {
@@ -589,8 +655,8 @@
 
     // 2. keywords: one per (type, locator), deduped; suite calls them in order
     var keywords = [];       // { name, lines }
-    var keywordByShape = {}; // "<type> <locator>" -> name
-    var usedNames = {};
+    var keywordByShape = Object.create(null); // "<type> <locator>" -> name
+    var usedNames = Object.create(null);
     var suiteCalls = [];     // strings, or { marker: name } scenario boundaries
     steps.forEach(function (st) {
       if (st.type === "test") { suiteCalls.push({ marker: String(st.name || "") }); return; }
@@ -615,11 +681,12 @@
         var locRef = "${" + entry.variable + "}";
         var argRef = "${" + (shape.argName || "value") + "}";
         if (shape.arg) body.push(SEP + "[Arguments]" + SEP + argRef);
-        // Variable references pass through rfEscape untouched, so emitStep is
-        // reused verbatim to build the keyword body.
+        // emitStep is reused verbatim to build the keyword body; refEscape
+        // keeps the generated variable references live while recorded values
+        // still escape normally.
         function actionLine(ref) {
           return emitStep({ type: st.type, locator: ref,
-                            value: shape.arg ? argRef : st.value, key: st.key })[0];
+                            value: shape.arg ? argRef : st.value, key: st.key }, refEscape)[0];
         }
         if (entry.fallback) {
           // Self-healing body: try the primary locator, fall back to the
@@ -638,7 +705,7 @@
         }
         keywords.push({ name: kwName, lines: body });
       }
-      suiteCalls.push(shape.arg ? kwName + SEP + rfEscape(st.value) : kwName);
+      suiteCalls.push(shape.arg ? kwName + SEP + rfEscape(st.value, true) : kwName);
     });
 
     // 3. resource text
@@ -768,6 +835,7 @@
       var header = /^\*{3}\s*([^*]+?)\s*\*{3}/.exec(line);
       if (header) { section = header[1].toLowerCase(); continue; }
       if (section !== "test cases") continue;
+      if (line.charAt(0) === "#") continue;          // full-line comment, NOT a test name
       if (!/^\s/.test(line)) {                       // unindented: a test-case name
         if (testName === null) testName = line.trim();
         else steps.push({ type: "test", name: line.trim() });
@@ -775,7 +843,19 @@
       }
       var body = line.replace(/^\s+/, "");
       if (body.charAt(0) === "#") continue;          // comments carry no step
-      var tokens = body.split(/ {2,}/);
+      // Trailing whitespace (editor artifacts) is not data — unless the last
+      // space is escaped (odd backslash run before it: `\ ` survives).
+      var tail = /^(.*?)([ \t]+)$/.exec(body);
+      if (tail) {
+        var bs = /\\*$/.exec(tail[1])[0].length;
+        body = bs % 2 === 1 ? tail[1] + " " : tail[1];
+      }
+      // RF separators: 2+ spaces, or a tab optionally padded with spaces.
+      var tokens = body.split(/[ \t]*\t[ \t]*| {2,}/);
+      // A cell starting with '#' begins an inline comment: drop it and the rest.
+      for (var ci = 1; ci < tokens.length; ci++) {
+        if (tokens[ci].charAt(0) === "#") { tokens = tokens.slice(0, ci); break; }
+      }
       if (tokens[0] === "New Browser") continue;     // bootstrap: re-added on export
       if (tokens[0] === "New Page") {
         if (url === null && tokens[1] !== undefined) url = rfUnescape(tokens[1]);
@@ -791,6 +871,7 @@
 
   return {
     rfEscape: rfEscape,
+    refEscape: refEscape,
     rfUnescape: rfUnescape,
     emitStep: emitStep,
     emitBody: emitBody,
@@ -852,15 +933,24 @@
     return "css:" + loc;                            // attribute selectors + CSS paths
   }
 
+  // Selenium key names are UPPER_SNAKE: camel-case DOM keys split on the case
+  // boundary (ArrowDown -> ARROW_DOWN) — a bare toUpperCase() would emit the
+  // invalid ARROWDOWN for any key set through the panel's step editor.
+  function seleniumKeyName(key) {
+    return KEY_NAMES[key] ||
+      String(key || "").replace(/([a-z0-9])([A-Z])/g, "$1_$2").toUpperCase();
+  }
+
   // One step -> one SeleniumLibrary keyword line (or a comment, never a loss).
-  function emitStep(step) {
+  // `esc` (default rfEscape) — see emit_browser.emitStep.
+  function emitStep(step, esc) {
+    var E = esc || rfEscape;
     if (!step) return [];
     if (step.type === "test") {
       return ["# --- Test: " + (step.name || "Test") + " ---"];  // scenario marker (comment in a body paste)
     }
     if (step.type === "press") {
-      var key = KEY_NAMES[step.key] || String(step.key || "").toUpperCase();
-      return ["Press Keys" + SEP + "None" + SEP + rfEscape(key)];
+      return ["Press Keys" + SEP + "None" + SEP + E(seleniumKeyName(step.key), true)];
     }
     if (step.type === "wait-load") {
       return ["Wait For Condition" + SEP + "return document.readyState === 'complete'"];
@@ -870,17 +960,17 @@
       var reference = base.emitStep(step)[0] || (step.type + " " + step.locator);
       return ["# untranslatable to SeleniumLibrary (no CSS fallback recorded): " + reference];
     }
-    loc = rfEscape(loc);
+    loc = E(loc);
     switch (step.type) {
       case "click": return ["Click Element" + SEP + loc];
-      case "fill": return ["Input Text" + SEP + loc + SEP + rfEscape(step.value)];
-      case "select": return ["Select From List By Label" + SEP + loc + SEP + rfEscape(step.value)];
+      case "fill": return ["Input Text" + SEP + loc + SEP + E(step.value, true)];
+      case "select": return ["Select From List By Label" + SEP + loc + SEP + E(step.value, true)];
       case "check": return ["Select Checkbox" + SEP + loc];
       case "uncheck": return ["Unselect Checkbox" + SEP + loc];
       case "assert-visible": return ["Element Should Be Visible" + SEP + loc];
-      case "assert-text": return ["Element Text Should Be" + SEP + loc + SEP + rfEscape(step.value)];
+      case "assert-text": return ["Element Text Should Be" + SEP + loc + SEP + E(step.value, true)];
       case "assert-value":
-        return ["Element Attribute Value Should Be" + SEP + loc + SEP + "value" + SEP + rfEscape(step.value)];
+        return ["Element Attribute Value Should Be" + SEP + loc + SEP + "value" + SEP + E(step.value, true)];
       case "assert-count":
         return ["Page Should Contain Element" + SEP + loc + SEP + "limit=" + rfEscape(step.value)];
       case "capture": return ["Get WebElement" + SEP + loc];
@@ -955,6 +1045,7 @@
     "assert-text": { name: function (h) { return h + " Text Should Be"; }, arg: true, argName: "expected" },
     "assert-value": { name: function (h) { return h + " Value Should Be"; }, arg: true, argName: "expected" },
     "assert-count": { name: function (h) { return h + " Count Should Be"; }, arg: true, argName: "expected" },
+    "capture": { name: function (h) { return "Locate " + h; }, arg: false },
   };
 
   function buildResourcePair(opts) {
@@ -963,7 +1054,9 @@
     var resourceName = opts.resourceName || "recorded_keywords.resource";
 
     // 1. distinct TRANSLATED locators -> ${LOC_<N>_<SLUG>} variables
-    var varByLocator = {};
+    // Object.create(null): see emit_browser — a locator spelled like an
+    // Object.prototype member must not hit an inherited property.
+    var varByLocator = Object.create(null);
     var varOrder = [];
     var n = 0;
     steps.forEach(function (st) {
@@ -978,8 +1071,8 @@
 
     // 2. keywords: one per (type, locator), deduped; suite calls them in order
     var keywords = [];
-    var keywordByShape = {};
-    var usedNames = {};
+    var keywordByShape = Object.create(null);
+    var usedNames = Object.create(null);
     var suiteCalls = [];     // strings, or { marker: name } scenario boundaries
     steps.forEach(function (st) {
       if (st.type === "test") { suiteCalls.push({ marker: String(st.name || "") }); return; }
@@ -1005,14 +1098,15 @@
         var locRef = "${" + entry.variable + "}";
         var argRef = "${" + (shape.argName || "value") + "}";
         if (shape.arg) body.push(SEP + "[Arguments]" + SEP + argRef);
-        // Reuse emitStep verbatim: variable references pass rfEscape untouched,
-        // and a locator that ALREADY starts with ${ skips translation below.
+        // Reuse emitStep verbatim: base.refEscape keeps the generated variable
+        // references live, and a locator that ALREADY starts with ${ skips
+        // translation below.
         var line = emitStep({ type: st.type, locator: locRef, css: null,
-                              value: shape.arg ? argRef : st.value, key: st.key })[0];
+                              value: shape.arg ? argRef : st.value, key: st.key }, base.refEscape)[0];
         body.push(SEP + line);
         keywords.push({ name: kwName, lines: body });
       }
-      suiteCalls.push(shape.arg ? kwName + SEP + rfEscape(st.value) : kwName);
+      suiteCalls.push(shape.arg ? kwName + SEP + rfEscape(st.value, true) : kwName);
     });
 
     // 3. resource text
@@ -1100,19 +1194,36 @@
   var collapse = locators.collapse;
 
   // ---- duck-typed document scan (mirror of locators.js allElements) --------
+  // Pierces open shadow roots like the Playwright engines the recorded
+  // locators target — replay must resolve what the export will resolve.
   function allElements(doc) {
     if (doc && typeof doc.querySelectorAll === "function") {
-      try { return Array.prototype.slice.call(doc.querySelectorAll("*")); } catch (e) { /* fall through */ }
+      try {
+        var out = [];
+        var scopes = [doc];
+        while (scopes.length) {
+          var els = scopes.pop().querySelectorAll("*");
+          for (var i = 0; i < els.length; i++) {
+            out.push(els[i]);
+            if (els[i].shadowRoot) scopes.push(els[i].shadowRoot);
+          }
+        }
+        return out;
+      } catch (e) { /* fall through */ }
     }
-    var out = [];
-    function walk(n) {
-      if (!n) return;
-      out.push(n);
-      var kids = n.children || [];
+    var out2 = [];
+    function walkChildren(n) {
+      var kids = (n && n.children) || [];
       for (var i = 0; i < kids.length; i++) walk(kids[i]);
     }
+    function walk(n) {
+      if (!n) return;
+      out2.push(n);
+      if (n.shadowRoot) walkChildren(n.shadowRoot);
+      walkChildren(n);
+    }
     if (doc && doc.body) walk(doc.body);
-    return out;
+    return out2;
   }
   function attrOf(el, name) {
     try {
@@ -1295,6 +1406,7 @@
 
   // ---- hover highlight overlay ---------------------------------------------
   function createOverlay(doc) {
+    var flashTimer = 0, flashOrig = "";
     var box = doc.createElement("div");
     box.style.cssText = "position:fixed;z-index:2147483646;pointer-events:none;" +
       "border:2px solid " + ACCENT + ";background:rgba(79,70,229,0.10);border-radius:2px;" +
@@ -1319,11 +1431,21 @@
       },
       hide: function () { box.style.display = "none"; chip.style.display = "none"; },
       flash: function () {
-        var orig = box.style.background;
+        // Snapshot the resting background only when idle: two overlapping
+        // flashes (fill + deferred press arrive in one tick) would otherwise
+        // snapshot the green and restore green — permanently.
+        if (flashTimer) clearTimeout(flashTimer);
+        else flashOrig = box.style.background;
         box.style.background = "rgba(22,163,74,0.25)";
-        setTimeout(function () { box.style.background = orig; }, 150);
+        flashTimer = setTimeout(function () {
+          box.style.background = flashOrig;
+          flashTimer = 0;
+        }, 150);
       },
-      destroy: function () { box.remove(); chip.remove(); },
+      destroy: function () {
+        if (flashTimer) { clearTimeout(flashTimer); flashTimer = 0; }
+        box.remove(); chip.remove();
+      },
     };
   }
 
@@ -1492,6 +1614,9 @@
     }
     function onDragMove(e) {
       if (!drag) return;
+      // mouseup outside the window never reaches us: a move with no button
+      // held means the drag already ended — stop following the cursor.
+      if (e.buttons === 0) { drag = null; return; }
       panel.style.left = (e.clientX - drag.dx) + "px";
       panel.style.top = (e.clientY - drag.dy) + "px";
     }
@@ -1698,6 +1823,7 @@
   var STORE_KEY = "__rfrecSteps";
   var NAME_KEY = "__rfrecName";
   var URL_KEY = "__rfrecUrl";
+  var REC_KEY = "__rfrecRecording";
   var DEFAULT_NAME = "Recorded Scenario";
   var REPLAY_DELAY = 350;   // ms between replayed steps
   var HINT_CAPTURE = "Hover + click to capture a locator. rec to record, play to replay. Esc to stop.";
@@ -1742,15 +1868,38 @@
         }
       } catch (e) { /* ignore */ }
     }
+    // The recording FLAG survives navigation too: after a reload + re-injection
+    // (snippet re-paste or extension shortcut) recording resumes by itself
+    // instead of silently dropping every interaction until the user notices.
+    function saveRecording() {
+      try { global.sessionStorage.setItem(REC_KEY, recording ? "1" : ""); } catch (e) { /* ignore */ }
+    }
+    function loadRecording() {
+      try { return global.sessionStorage.getItem(REC_KEY) === "1"; } catch (e) { return false; }
+    }
 
     // ---- helpers -----------------------------------------------------------
     function copy(text, btn) {
-      try { if (global.navigator.clipboard) global.navigator.clipboard.writeText(text); } catch (e) { /* ignore */ }
-      if (btn) {
-        var t = btn.textContent;
-        btn.textContent = "copied";
-        setTimeout(function () { btn.textContent = t; }, 700);
+      function flash(label) {
+        if (!btn) return;
+        if (btn.__rfrecLabel === undefined) btn.__rfrecLabel = btn.textContent;
+        btn.textContent = label;
+        setTimeout(function () { btn.textContent = btn.__rfrecLabel; }, 700);
       }
+      // writeText rejects async (unfocused document, cross-origin iframe
+      // permissions policy...) — a sync try/catch cannot see it, and the
+      // button must not claim "copied" when nothing was.
+      try {
+        if (global.navigator.clipboard) {
+          var p = global.navigator.clipboard.writeText(text);
+          if (p && typeof p.then === "function") {
+            p.then(function () { flash("copied"); },
+                   function () { flash("copy failed"); });
+            return;
+          }
+        }
+        flash("copied");
+      } catch (e) { flash("copy failed"); }
     }
     // Our own transient DOM helpers (download anchor, import file input) are
     // parented to the PANEL, never to documentElement: their synthetic .click()
@@ -1829,9 +1978,22 @@
     }
 
     // ---- click: capture (inspect) or record (step) -------------------------
+    // The floating menu closes itself on MOUSEDOWN (panel.js onAway); by the
+    // time the paired click event reaches us, isOpen() is already false — so
+    // the dismissal is remembered here and the click that follows is swallowed
+    // instead of being recorded/captured as a spurious step.
+    var menuDismissedAt = 0;
+    function onMouseDown(event) {
+      if (replaying) return;
+      if (menu && menu.isOpen() && !menu.contains(event.target)) menuDismissedAt = Date.now();
+    }
     function onClick(event) {
       if (replaying) return;                          // never record replayed events
       if (inOurUI(event.target)) return;              // panel/menu handle their own clicks
+      if (menuDismissedAt && Date.now() - menuDismissedAt < 1000) {
+        menuDismissedAt = 0;
+        return;                                       // this click only dismissed the menu
+      }
       if (menu && menu.isOpen()) { menu.close(); return; }
       var target = event.target && event.target.nodeType === 1 ? event.target : null;
       if (!target) return;
@@ -1840,7 +2002,7 @@
         var type = String((target.getAttribute && target.getAttribute("type")) || "").toLowerCase();
         if (tag === "input" && (type === "checkbox" || type === "radio")) return; // change handles those
         var best = bestFor(target);
-        addStep(stepFields("click", best));
+        addStep(stepFields("click", best, { t: Date.now() }));  // t: dedup window for deliberate repeats
         return;                                       // never block the app while recording
       }
       // capture mode: inspection only — swallow the click
@@ -1877,9 +2039,13 @@
       }
       if (tag === "input" && type === "radio") {
         best = bestFor(t);
-        addStep(stepFields("click", best));
+        addStep(stepFields("click", best, { t: Date.now() }));
         return;
       }
+      // File inputs have no replayable value (C:\fakepath\...) and assigning
+      // one at replay time throws — a real upload needs Upload File By
+      // Selector written by hand, so nothing useful can be recorded here.
+      if (tag === "input" && type === "file") return;
       if ((tag === "input" || tag === "textarea") && "value" in t) {
         best = bestFor(t);
         // Passwords never reach the export/clipboard/sessionStorage in clear text.
@@ -1908,9 +2074,15 @@
         // the key immediately put it BEFORE the fill it actually followed —
         // replaying that pressed Enter on an empty field, then filled it.
         // Caught by the first visible-browser demo run.
-        setTimeout(function () { addStep({ type: "press", key: event.key }); }, 0);
+        // Kept in `pendingPress` so onBeforeUnload can flush it if Enter
+        // triggers a full-page submit and the page unloads before the tick.
+        pendingPress = { type: "press", key: event.key };
+        setTimeout(function () {
+          if (pendingPress) { var p = pendingPress; pendingPress = null; addStep(p); }
+        }, 0);
       }
     }
+    var pendingPress = null;
 
     // ---- right-click assertion menu (record mode only) ---------------------
     function candidateCount(best) {
@@ -1947,7 +2119,12 @@
 
     // ---- navigation -> replayable wait -------------------------------------
     function onNav() { if (recording && !replaying) addStep({ type: "wait-load" }); }
-    function onBeforeUnload() { if (recording && !replaying) { stepsCore.addStep(steps, { type: "wait-load" }); saveSteps(); } }
+    function onBeforeUnload() {
+      if (!recording || replaying) return;
+      if (pendingPress) { stepsCore.addStep(steps, pendingPress); pendingPress = null; } // the Enter that submitted
+      stepsCore.addStep(steps, { type: "wait-load" });
+      saveSteps();
+    }
 
     // ---- in-panel replay ---------------------------------------------------
     // Steps replay sequentially (REPLAY_DELAY ms apart) against the live DOM:
@@ -1970,6 +2147,27 @@
       try { ev = new KeyboardEvent(type, { bubbles: true, cancelable: true, key: key }); }
       catch (e) { ev = doc.createEvent("Events"); ev.initEvent(type, true, true); ev.key = key; }
       el.dispatchEvent(ev);
+    }
+    function tryFocus(el) {
+      try { if (el && typeof el.focus === "function") el.focus(); } catch (e) { /* ignore */ }
+    }
+    // Assign through the NATIVE prototype setter: React's controlled inputs
+    // track the last value set via the native accessor and dedupe `input`
+    // events whose value "didn't change" — a plain el.value = x is exactly
+    // what gets deduped, so fills silently no-oped on React apps.
+    function setNativeValue(el, value) {
+      var proto = null;
+      try {
+        if (global.HTMLInputElement && el instanceof global.HTMLInputElement) proto = global.HTMLInputElement.prototype;
+        else if (global.HTMLTextAreaElement && el instanceof global.HTMLTextAreaElement) proto = global.HTMLTextAreaElement.prototype;
+      } catch (e) { /* duck-typed doc in tests */ }
+      if (proto) {
+        try {
+          var desc = Object.getOwnPropertyDescriptor(proto, "value");
+          if (desc && desc.set) { desc.set.call(el, value); return; }
+        } catch (e) { /* fall through */ }
+      }
+      el.value = value;
     }
     function highlightElement(el, label) {
       if (!overlay || !el || typeof el.getBoundingClientRect !== "function") return;
@@ -2001,10 +2199,15 @@
       highlightElement(el, stepLine(st));
       switch (plan.action) {
         case "click":
-          synthMouse(el, "mousedown"); synthMouse(el, "mouseup"); synthMouse(el, "click");
+          // focus between down and up, like a native click — so a recorded
+          // press that follows lands on this element, not on <body>
+          synthMouse(el, "mousedown");
+          tryFocus(el);
+          synthMouse(el, "mouseup"); synthMouse(el, "click");
           break;
         case "fill":
-          el.value = plan.value;
+          tryFocus(el);
+          setNativeValue(el, plan.value);
           synthEvent(el, "input"); synthEvent(el, "change");
           break;
         case "select": {
@@ -2082,8 +2285,14 @@
       if (format === "resource-pair") {
         var pair = target.buildResourcePair(opts);
         download(pair.resource, pair.resourceName);
-        download(pair.suite, fileSlug() + ".robot");
+        // Chrome's multiple-download protection targets same-task downloads:
+        // spacing the second one out gives the user a visible prompt instead
+        // of a silently missing .robot — and the hint says to expect 2 files.
+        setTimeout(function () { download(pair.suite, fileSlug() + ".robot"); }, 350);
         copy(pair.suite);
+        if (panel) {
+          panel.setHint("Exporting 2 files (.resource + .robot) — allow multiple downloads if the browser asks.");
+        }
       } else if (format === "body") {
         copy(target.emitBody(steps));
       } else {
@@ -2168,6 +2377,7 @@
     function setRecording(on) {
       if (!running && on) start();
       recording = !!on;
+      saveRecording();
       if (on) rememberUrl();
       if (panel) {
         panel.setRecording(recording);
@@ -2211,6 +2421,7 @@
       panel.setHint(HINT_CAPTURE);
       renderPanel();
       doc.addEventListener("mousemove", onMove, true);
+      doc.addEventListener("mousedown", onMouseDown, true);
       doc.addEventListener("click", onClick, true);
       doc.addEventListener("change", onChange, true);
       doc.addEventListener("keydown", onKey, true);
@@ -2218,6 +2429,7 @@
       global.addEventListener("hashchange", onNav, true);
       global.addEventListener("popstate", onNav, true);
       global.addEventListener("beforeunload", onBeforeUnload, true);
+      if (loadRecording()) setRecording(true);   // recording survives navigation + re-injection
       console.info("[rf-web-recorder] Ready. Hover to highlight, click to capture, rec to record, " +
         "play to replay, +test to start a new test case. " +
         "Right-click while recording opens the assertion menu. Esc stops.");
@@ -2227,7 +2439,9 @@
       cancelReplay(null);
       running = false;
       recording = false;
+      saveRecording();                            // an explicit stop does not auto-resume later
       doc.removeEventListener("mousemove", onMove, true);
+      doc.removeEventListener("mousedown", onMouseDown, true);
       doc.removeEventListener("click", onClick, true);
       doc.removeEventListener("change", onChange, true);
       doc.removeEventListener("keydown", onKey, true);
@@ -2275,7 +2489,7 @@
   var instance = CORE.recorder.create();
 
   global.__RFREC = {
-    version: "0.3.2",
+    version: "0.4.0",
     start: instance.start,
     stop: instance.stop,
     isRunning: instance.isRunning,

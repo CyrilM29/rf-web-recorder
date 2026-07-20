@@ -35,44 +35,65 @@
   var SEP = "    "; // Robot Framework argument separator (4 spaces)
 
   // Escape a value so it survives Robot Framework's plain-text parsing:
-  // backslashes, control chars, runs of 2+ spaces (token separators), and
-  // leading '#' (comment) / leading-trailing spaces (stripped) are protected.
-  function rfEscape(value) {
+  // backslashes, control chars, variable syntax (${ @{ &{ %{), runs of 2+
+  // spaces (token separators), and leading '#' (comment) / leading-trailing
+  // spaces (stripped) are protected. With `isValue`, a leading "word=" is also
+  // escaped so a recorded value can never turn into a named argument (Browser
+  // keywords have parameters like force/txt — `force=True` as a literal value
+  // would otherwise be swallowed as `force=` and the call would lose it).
+  function rfEscape(value, isValue) {
     if (value === undefined || value === null) return "${EMPTY}";
     var s = String(value);
     if (s === "") return "${EMPTY}";
     s = s.replace(/\\/g, "\\\\");
     s = s.replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t");
+    s = s.replace(/([$@&%])\{/g, "\\$1{");   // recorded text is always literal, never a live RF variable
     s = s.replace(/ ( +)/g, function (m, extra) {
       return " " + extra.replace(/ /g, "\\ ");                 // "a  b" -> "a \ b"
     });
     if (s.charAt(0) === " ") s = "\\" + s;
     if (s.charAt(0) === "#") s = "\\" + s;
-    if (s.length > 1 && s.charAt(s.length - 1) === " " && s.charAt(s.length - 2) !== "\\") {
-      s = s.slice(0, -1) + "\\ ";
+    if (s.charAt(s.length - 1) === " ") {
+      // An odd number of backslashes before the final space means it is
+      // already escaped (doubling made literal backslashes come in pairs).
+      var bs = /\\*(?= $)/.exec(s)[0].length;
+      if (bs % 2 === 0) s = s.slice(0, -1) + "\\ ";
     }
+    if (isValue) s = s.replace(/^([A-Za-z_][A-Za-z0-9_]*)=/, "$1\\=");
     return s;
   }
 
   // One step -> one (or zero) Browser-library keyword line, no indentation.
-  function emitStep(step) {
-    var loc = rfEscape(step.locator);
+  // `esc` (default rfEscape) lets the resource-pair builder keep its generated
+  // ${...} variable references live while recorded values still escape.
+  function emitStep(step, esc) {
+    var E = esc || rfEscape;
+    var loc = E(step.locator);
     switch (step.type) {
       case "click": return ["Click" + SEP + loc];
-      case "fill": return ["Fill Text" + SEP + loc + SEP + rfEscape(step.value)];
-      case "select": return ["Select Options By" + SEP + loc + SEP + "label" + SEP + rfEscape(step.value)];
+      case "fill": return ["Fill Text" + SEP + loc + SEP + E(step.value, true)];
+      case "select": return ["Select Options By" + SEP + loc + SEP + "label" + SEP + E(step.value, true)];
       case "check": return ["Check Checkbox" + SEP + loc];
       case "uncheck": return ["Uncheck Checkbox" + SEP + loc];
-      case "press": return ["Keyboard Key" + SEP + "press" + SEP + rfEscape(step.key)];
+      case "press": return ["Keyboard Key" + SEP + "press" + SEP + E(step.key, true)];
       case "wait-load": return ["Wait For Load State" + SEP + "load"];
       case "assert-visible": return ["Get Element States" + SEP + loc + SEP + "contains" + SEP + "visible"];
-      case "assert-text": return ["Get Text" + SEP + loc + SEP + "==" + SEP + rfEscape(step.value)];
-      case "assert-value": return ["Get Property" + SEP + loc + SEP + "value" + SEP + "==" + SEP + rfEscape(step.value)];
-      case "assert-count": return ["Get Element Count" + SEP + loc + SEP + "==" + SEP + rfEscape(step.value)];
+      case "assert-text": return ["Get Text" + SEP + loc + SEP + "==" + SEP + E(step.value, true)];
+      case "assert-value": return ["Get Property" + SEP + loc + SEP + "value" + SEP + "==" + SEP + E(step.value, true)];
+      case "assert-count": return ["Get Element Count" + SEP + loc + SEP + "==" + SEP + E(step.value, true)];
       case "capture": return ["Get Element" + SEP + loc];
       case "test": return ["# --- Test: " + (step.name || "Test") + " ---"]; // scenario marker (comment in a body paste)
       default: return [];
     }
+  }
+
+  // rfEscape variant for resource-pair keyword bodies: our generated variable
+  // references (${LOC_...}, ${value}, ...) must stay live; anything else —
+  // i.e. every recorded value — escapes normally.
+  function refEscape(v, isValue) {
+    var s = String(v === undefined || v === null ? "" : v);
+    if (/^\$\{[A-Za-z_][A-Za-z0-9_]*\}$/.test(s)) return s;
+    return rfEscape(v, isValue);
   }
 
   // ---- scenario split ------------------------------------------------------
@@ -168,6 +189,7 @@
     "assert-text": { name: function (h) { return h + " Text Should Be"; }, arg: true, argName: "expected" },
     "assert-value": { name: function (h) { return h + " Value Should Be"; }, arg: true, argName: "expected" },
     "assert-count": { name: function (h) { return h + " Count Should Be"; }, arg: true, argName: "expected" },
+    "capture": { name: function (h) { return "Locate " + h; }, arg: false },
   };
 
   // A step deserves a CSS fallback branch when its recorded CSS path exists,
@@ -185,7 +207,9 @@
 
     // 1. distinct locators -> ${LOC_<N>_<SLUG>} variables
     //    (+ ${LOC_<N>_<SLUG>_FALLBACK} when a distinct CSS path was recorded)
-    var varByLocator = {};
+    // Object.create(null): a locator spelled like an Object.prototype member
+    // ("constructor", "toString"...) must not hit an inherited property.
+    var varByLocator = Object.create(null);
     var varOrder = [];
     var n = 0;
     steps.forEach(function (st) {
@@ -203,8 +227,8 @@
 
     // 2. keywords: one per (type, locator), deduped; suite calls them in order
     var keywords = [];       // { name, lines }
-    var keywordByShape = {}; // "<type> <locator>" -> name
-    var usedNames = {};
+    var keywordByShape = Object.create(null); // "<type> <locator>" -> name
+    var usedNames = Object.create(null);
     var suiteCalls = [];     // strings, or { marker: name } scenario boundaries
     steps.forEach(function (st) {
       if (st.type === "test") { suiteCalls.push({ marker: String(st.name || "") }); return; }
@@ -229,11 +253,12 @@
         var locRef = "${" + entry.variable + "}";
         var argRef = "${" + (shape.argName || "value") + "}";
         if (shape.arg) body.push(SEP + "[Arguments]" + SEP + argRef);
-        // Variable references pass through rfEscape untouched, so emitStep is
-        // reused verbatim to build the keyword body.
+        // emitStep is reused verbatim to build the keyword body; refEscape
+        // keeps the generated variable references live while recorded values
+        // still escape normally.
         function actionLine(ref) {
           return emitStep({ type: st.type, locator: ref,
-                            value: shape.arg ? argRef : st.value, key: st.key })[0];
+                            value: shape.arg ? argRef : st.value, key: st.key }, refEscape)[0];
         }
         if (entry.fallback) {
           // Self-healing body: try the primary locator, fall back to the
@@ -252,7 +277,7 @@
         }
         keywords.push({ name: kwName, lines: body });
       }
-      suiteCalls.push(shape.arg ? kwName + SEP + rfEscape(st.value) : kwName);
+      suiteCalls.push(shape.arg ? kwName + SEP + rfEscape(st.value, true) : kwName);
     });
 
     // 3. resource text
@@ -382,6 +407,7 @@
       var header = /^\*{3}\s*([^*]+?)\s*\*{3}/.exec(line);
       if (header) { section = header[1].toLowerCase(); continue; }
       if (section !== "test cases") continue;
+      if (line.charAt(0) === "#") continue;          // full-line comment, NOT a test name
       if (!/^\s/.test(line)) {                       // unindented: a test-case name
         if (testName === null) testName = line.trim();
         else steps.push({ type: "test", name: line.trim() });
@@ -389,7 +415,19 @@
       }
       var body = line.replace(/^\s+/, "");
       if (body.charAt(0) === "#") continue;          // comments carry no step
-      var tokens = body.split(/ {2,}/);
+      // Trailing whitespace (editor artifacts) is not data — unless the last
+      // space is escaped (odd backslash run before it: `\ ` survives).
+      var tail = /^(.*?)([ \t]+)$/.exec(body);
+      if (tail) {
+        var bs = /\\*$/.exec(tail[1])[0].length;
+        body = bs % 2 === 1 ? tail[1] + " " : tail[1];
+      }
+      // RF separators: 2+ spaces, or a tab optionally padded with spaces.
+      var tokens = body.split(/[ \t]*\t[ \t]*| {2,}/);
+      // A cell starting with '#' begins an inline comment: drop it and the rest.
+      for (var ci = 1; ci < tokens.length; ci++) {
+        if (tokens[ci].charAt(0) === "#") { tokens = tokens.slice(0, ci); break; }
+      }
       if (tokens[0] === "New Browser") continue;     // bootstrap: re-added on export
       if (tokens[0] === "New Page") {
         if (url === null && tokens[1] !== undefined) url = rfUnescape(tokens[1]);
@@ -405,6 +443,7 @@
 
   return {
     rfEscape: rfEscape,
+    refEscape: refEscape,
     rfUnescape: rfUnescape,
     emitStep: emitStep,
     emitBody: emitBody,

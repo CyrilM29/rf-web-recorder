@@ -147,3 +147,22 @@ test("buildResourcePair splits the suite on markers; bootstrap only once", () =>
   assert.match(pair.suite, /Second Scenario\n    Click Go/);
   assert.equal((pair.suite.match(/Open Browser/g) || []).length, 1);
 });
+
+// ---- v0.4.0 fixes ----------------------------------------------------------
+test("press: camel-case keys become UPPER_SNAKE Selenium names", () => {
+  assert.deepEqual(sel.emitStep({ type: "press", key: "ArrowDown" }), ["Press Keys    None    ARROW_DOWN"]);
+  assert.deepEqual(sel.emitStep({ type: "press", key: "PageUp" }), ["Press Keys    None    PAGE_UP"]);
+  assert.deepEqual(sel.emitStep({ type: "press", key: "Enter" }), ["Press Keys    None    ENTER"]);
+  assert.deepEqual(sel.emitStep({ type: "press", key: "F5" }), ["Press Keys    None    F5"]);
+});
+test("resource pair: capture steps become Locate keywords here too", () => {
+  const pair = sel.buildResourcePair({
+    steps: [{ type: "capture", locator: "id=hdr", name: "Header" }],
+  });
+  assert.ok(pair.resource.includes("Get WebElement    ${LOC_1_HEADER}"));
+  assert.ok(pair.suite.includes("Locate Header"));
+});
+test("emission escapes RF variable syntax in recorded values", () => {
+  assert.deepEqual(sel.emitStep({ type: "fill", locator: "id=q", value: "x${y}" }),
+    ["Input Text    id:q    x\\${y}"]);
+});

@@ -47,15 +47,24 @@
     return "css:" + loc;                            // attribute selectors + CSS paths
   }
 
+  // Selenium key names are UPPER_SNAKE: camel-case DOM keys split on the case
+  // boundary (ArrowDown -> ARROW_DOWN) — a bare toUpperCase() would emit the
+  // invalid ARROWDOWN for any key set through the panel's step editor.
+  function seleniumKeyName(key) {
+    return KEY_NAMES[key] ||
+      String(key || "").replace(/([a-z0-9])([A-Z])/g, "$1_$2").toUpperCase();
+  }
+
   // One step -> one SeleniumLibrary keyword line (or a comment, never a loss).
-  function emitStep(step) {
+  // `esc` (default rfEscape) — see emit_browser.emitStep.
+  function emitStep(step, esc) {
+    var E = esc || rfEscape;
     if (!step) return [];
     if (step.type === "test") {
       return ["# --- Test: " + (step.name || "Test") + " ---"];  // scenario marker (comment in a body paste)
     }
     if (step.type === "press") {
-      var key = KEY_NAMES[step.key] || String(step.key || "").toUpperCase();
-      return ["Press Keys" + SEP + "None" + SEP + rfEscape(key)];
+      return ["Press Keys" + SEP + "None" + SEP + E(seleniumKeyName(step.key), true)];
     }
     if (step.type === "wait-load") {
       return ["Wait For Condition" + SEP + "return document.readyState === 'complete'"];
@@ -65,17 +74,17 @@
       var reference = base.emitStep(step)[0] || (step.type + " " + step.locator);
       return ["# untranslatable to SeleniumLibrary (no CSS fallback recorded): " + reference];
     }
-    loc = rfEscape(loc);
+    loc = E(loc);
     switch (step.type) {
       case "click": return ["Click Element" + SEP + loc];
-      case "fill": return ["Input Text" + SEP + loc + SEP + rfEscape(step.value)];
-      case "select": return ["Select From List By Label" + SEP + loc + SEP + rfEscape(step.value)];
+      case "fill": return ["Input Text" + SEP + loc + SEP + E(step.value, true)];
+      case "select": return ["Select From List By Label" + SEP + loc + SEP + E(step.value, true)];
       case "check": return ["Select Checkbox" + SEP + loc];
       case "uncheck": return ["Unselect Checkbox" + SEP + loc];
       case "assert-visible": return ["Element Should Be Visible" + SEP + loc];
-      case "assert-text": return ["Element Text Should Be" + SEP + loc + SEP + rfEscape(step.value)];
+      case "assert-text": return ["Element Text Should Be" + SEP + loc + SEP + E(step.value, true)];
       case "assert-value":
-        return ["Element Attribute Value Should Be" + SEP + loc + SEP + "value" + SEP + rfEscape(step.value)];
+        return ["Element Attribute Value Should Be" + SEP + loc + SEP + "value" + SEP + E(step.value, true)];
       case "assert-count":
         return ["Page Should Contain Element" + SEP + loc + SEP + "limit=" + rfEscape(step.value)];
       case "capture": return ["Get WebElement" + SEP + loc];
@@ -150,6 +159,7 @@
     "assert-text": { name: function (h) { return h + " Text Should Be"; }, arg: true, argName: "expected" },
     "assert-value": { name: function (h) { return h + " Value Should Be"; }, arg: true, argName: "expected" },
     "assert-count": { name: function (h) { return h + " Count Should Be"; }, arg: true, argName: "expected" },
+    "capture": { name: function (h) { return "Locate " + h; }, arg: false },
   };
 
   function buildResourcePair(opts) {
@@ -158,7 +168,9 @@
     var resourceName = opts.resourceName || "recorded_keywords.resource";
 
     // 1. distinct TRANSLATED locators -> ${LOC_<N>_<SLUG>} variables
-    var varByLocator = {};
+    // Object.create(null): see emit_browser — a locator spelled like an
+    // Object.prototype member must not hit an inherited property.
+    var varByLocator = Object.create(null);
     var varOrder = [];
     var n = 0;
     steps.forEach(function (st) {
@@ -173,8 +185,8 @@
 
     // 2. keywords: one per (type, locator), deduped; suite calls them in order
     var keywords = [];
-    var keywordByShape = {};
-    var usedNames = {};
+    var keywordByShape = Object.create(null);
+    var usedNames = Object.create(null);
     var suiteCalls = [];     // strings, or { marker: name } scenario boundaries
     steps.forEach(function (st) {
       if (st.type === "test") { suiteCalls.push({ marker: String(st.name || "") }); return; }
@@ -200,14 +212,15 @@
         var locRef = "${" + entry.variable + "}";
         var argRef = "${" + (shape.argName || "value") + "}";
         if (shape.arg) body.push(SEP + "[Arguments]" + SEP + argRef);
-        // Reuse emitStep verbatim: variable references pass rfEscape untouched,
-        // and a locator that ALREADY starts with ${ skips translation below.
+        // Reuse emitStep verbatim: base.refEscape keeps the generated variable
+        // references live, and a locator that ALREADY starts with ${ skips
+        // translation below.
         var line = emitStep({ type: st.type, locator: locRef, css: null,
-                              value: shape.arg ? argRef : st.value, key: st.key })[0];
+                              value: shape.arg ? argRef : st.value, key: st.key }, base.refEscape)[0];
         body.push(SEP + line);
         keywords.push({ name: kwName, lines: body });
       }
-      suiteCalls.push(shape.arg ? kwName + SEP + rfEscape(st.value) : kwName);
+      suiteCalls.push(shape.arg ? kwName + SEP + rfEscape(st.value, true) : kwName);
     });
 
     // 3. resource text
