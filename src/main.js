@@ -13,7 +13,7 @@
   var instance = CORE.recorder.create();
 
   global.__RFREC = {
-    version: "0.4.0",
+    version: "0.4.1",
     start: instance.start,
     stop: instance.stop,
     isRunning: instance.isRunning,

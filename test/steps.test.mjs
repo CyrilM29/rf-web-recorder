@@ -3,7 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import stepsCore from "../src/core/steps.js";
 
-const { addStep, compact, isSame } = stepsCore;
+const { addStep, compact, isSame, sensitiveMask } = stepsCore;
 
 function click(loc) { return { type: "click", locator: loc, strategy: "role" }; }
 function fill(loc, value) { return { type: "fill", locator: loc, value, strategy: "role" }; }
@@ -136,4 +136,46 @@ test("compact() preserves deliberate timed repeats", () => {
     { type: "click", locator: "id=plus", t: 2000 },
   ]);
   assert.equal(kept.length, 2);
+});
+
+// ---- sensitive-field masking ------------------------------------------------
+// Duck-typed field: only getAttribute, like the real recorder call sites.
+function field(attrs) {
+  return { getAttribute: (n) => (n in attrs ? attrs[n] : null) };
+}
+
+test("sensitiveMask: password inputs mask as <PASSWORD>", () => {
+  assert.equal(sensitiveMask(field({ type: "password" })), "<PASSWORD>");
+  assert.equal(sensitiveMask(field({ type: "PASSWORD" })), "<PASSWORD>");
+});
+
+test("sensitiveMask: payment/OTP/password-manager autocomplete tokens mask as <SECRET>", () => {
+  for (const ac of ["cc-number", "cc-csc", "cc-exp", "cc-exp-month", "cc-exp-year",
+                    "one-time-code", "current-password", "new-password"]) {
+    assert.equal(sensitiveMask(field({ type: "text", autocomplete: ac })), "<SECRET>", ac);
+  }
+  // autocomplete is a token list: the sensitive token can come with others
+  assert.equal(sensitiveMask(field({ autocomplete: "billing cc-number" })), "<SECRET>");
+});
+
+test("sensitiveMask: card/CVC/OTP name-id-label patterns mask as <SECRET>", () => {
+  assert.equal(sensitiveMask(field({ name: "card_number" })), "<SECRET>");
+  assert.equal(sensitiveMask(field({ name: "cardNumber" })), "<SECRET>");
+  assert.equal(sensitiveMask(field({ id: "cvv" })), "<SECRET>");
+  assert.equal(sensitiveMask(field({ name: "cvc2" })), "<SECRET>");
+  assert.equal(sensitiveMask(field({ name: "otp" })), "<SECRET>");
+  assert.equal(sensitiveMask(field({ "aria-label": "Security code" })), "<SECRET>");
+  assert.equal(sensitiveMask(field({ name: "one-time-code" })), "<SECRET>");
+  // a text field whose name says password (visibility-toggled password UIs)
+  assert.equal(sensitiveMask(field({ type: "text", name: "password" })), "<SECRET>");
+});
+
+test("sensitiveMask: ordinary fields are not masked", () => {
+  assert.equal(sensitiveMask(field({ type: "text", name: "username" })), null);
+  assert.equal(sensitiveMask(field({ type: "email", name: "email" })), null);
+  assert.equal(sensitiveMask(field({ name: "search" })), null);
+  assert.equal(sensitiveMask(field({ name: "cscope_query" })), null);  // csc needs word boundaries
+  assert.equal(sensitiveMask(field({ name: "footpath" })), null);      // otp needs word boundaries
+  assert.equal(sensitiveMask(field({ inputmode: "numeric", name: "quantity" })), null);
+  assert.equal(sensitiveMask(null), null);
 });

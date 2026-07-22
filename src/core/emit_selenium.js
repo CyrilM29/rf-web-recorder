@@ -131,36 +131,11 @@
   }
 
   // ---- resource-first pair (same shape as emit_browser's) ------------------
-  function slugText(text) {
-    return String(text || "").toUpperCase().replace(/[^A-Z0-9]+/g, "_")
-      .replace(/^_+|_+$/g, "").slice(0, 24).replace(/_+$/g, "");
-  }
-  function slugOf(step, fallback) {
-    // Same rule as emit_browser: an empty/numeric slug names the value, not the
-    // target — fall back to the locator before the generic ELEMENT_<n>.
-    var s = slugText(step.name || step.value);
-    if (!s || /^[0-9_]+$/.test(s)) {
-      var fromLocator = slugText(String(step.locator || "").replace(/^[a-z-]+=/, ""));
-      if (fromLocator && !/^[0-9_]+$/.test(fromLocator)) s = fromLocator;
-    }
-    return s || fallback;
-  }
-  function titleCase(slug) {
-    return String(slug).toLowerCase().split(/_+/).filter(Boolean)
-      .map(function (w) { return w.charAt(0).toUpperCase() + w.slice(1); }).join(" ");
-  }
-  var KEYWORD_SHAPES = {
-    "click": { name: function (h) { return "Click " + h; }, arg: false },
-    "fill": { name: function (h) { return "Fill " + h; }, arg: true, argName: "value" },
-    "select": { name: function (h) { return "Select " + h + " Option"; }, arg: true, argName: "label" },
-    "check": { name: function (h) { return "Check " + h; }, arg: false },
-    "uncheck": { name: function (h) { return "Uncheck " + h; }, arg: false },
-    "assert-visible": { name: function (h) { return h + " Should Be Visible"; }, arg: false },
-    "assert-text": { name: function (h) { return h + " Text Should Be"; }, arg: true, argName: "expected" },
-    "assert-value": { name: function (h) { return h + " Value Should Be"; }, arg: true, argName: "expected" },
-    "assert-count": { name: function (h) { return h + " Count Should Be"; }, arg: true, argName: "expected" },
-    "capture": { name: function (h) { return "Locate " + h; }, arg: false },
-  };
+  // Naming helpers + keyword shapes are shared with emit_browser.js: one
+  // definition, two adapters.
+  var slugOf = base.slugOf;
+  var titleCase = base.titleCase;
+  var KEYWORD_SHAPES = base.KEYWORD_SHAPES;
 
   function buildResourcePair(opts) {
     opts = opts || {};

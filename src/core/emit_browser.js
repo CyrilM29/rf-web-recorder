@@ -452,5 +452,10 @@
     buildSuite: buildSuite,
     buildResourcePair: buildResourcePair,
     parseSuite: parseSuite,
+    // resource-pair naming helpers, shared with emit_selenium.js
+    slugText: slugText,
+    slugOf: slugOf,
+    titleCase: titleCase,
+    KEYWORD_SHAPES: KEYWORD_SHAPES,
   };
 });

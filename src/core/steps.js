@@ -1,7 +1,8 @@
 /*
  * rf-web-recorder — core/steps.js
  *
- * Step model + compaction rules. Pure logic, unit-testable without a DOM.
+ * Step model + compaction rules + sensitive-field masking. Pure logic,
+ * unit-testable without a DOM.
  *
  * A step is a plain JSON-safe object:
  *   { type, locator?, strategy?, name?, css?, value?, key? }
@@ -74,5 +75,41 @@
     return out;
   }
 
-  return { addStep: addStep, compact: compact, isSame: isSame, stepKey: stepKey };
+  // ---- sensitive-field masking ---------------------------------------------
+  // Fields whose value must never reach the step list / sessionStorage /
+  // clipboard / export in clear text. type=password is the obvious case;
+  // the autocomplete tokens cover payment + OTP + password-manager fields;
+  // the name/id/aria-label patterns catch the same fields on forms that skip
+  // autocomplete. The patterns stay deliberately narrow: a false positive
+  // silently masks a value the user meant to record.
+  var SENSITIVE_AUTOCOMPLETE = /^(cc-number|cc-csc|cc-exp(-month|-year)?|one-time-code|current-password|new-password)$/;
+  var SENSITIVE_HINT = /passw|pwd|cvv|cvc|card.?number|cardnum|(^|[^a-z])(csc|otp)([^a-z]|$)|one.?time.?code|security.?code/;
+
+  function attrOf(el, name) {
+    try {
+      if (el && typeof el.getAttribute === "function") {
+        return String(el.getAttribute(name) || "").toLowerCase();
+      }
+    } catch (e) { /* ignore */ }
+    return "";
+  }
+
+  // Returns the placeholder to record instead of the real value ("<PASSWORD>"
+  // for password inputs, "<SECRET>" for payment/OTP fields), or null when the
+  // value is safe to record.
+  function sensitiveMask(el) {
+    if (!el) return null;
+    var type = attrOf(el, "type") || String(el.type || "").toLowerCase();
+    if (type === "password") return "<PASSWORD>";
+    // autocomplete is a whitespace-separated token list ("billing cc-number")
+    var tokens = attrOf(el, "autocomplete").split(/\s+/);
+    for (var i = 0; i < tokens.length; i++) {
+      if (SENSITIVE_AUTOCOMPLETE.test(tokens[i])) return "<SECRET>";
+    }
+    var hint = attrOf(el, "name") + " " + attrOf(el, "id") + " " + attrOf(el, "aria-label");
+    return SENSITIVE_HINT.test(hint) ? "<SECRET>" : null;
+  }
+
+  return { addStep: addStep, compact: compact, isSame: isSame, stepKey: stepKey,
+           sensitiveMask: sensitiveMask };
 });

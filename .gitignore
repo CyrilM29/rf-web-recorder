@@ -9,3 +9,6 @@ node_modules/
 
 # Local demo material (video generator + fixture page) — not part of the release
 demo/
+
+# Local notes / TODO scratch files — never published
+*.local.md

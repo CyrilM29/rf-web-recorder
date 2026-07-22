@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Acme Checkout — live test fixture</title>
+  <style>
+    body { margin: 0; font: 15px/1.5 "Segoe UI", sans-serif; color: #1f2933; background: #f4f6f9; }
+    .app { max-width: 560px; margin: 24px auto; background: #fff; border-radius: 10px;
+           box-shadow: 0 2px 14px rgba(18,38,63,.10); padding: 22px 26px; }
+    label { display: block; font-size: 13px; font-weight: 600; color: #52606d; margin: 14px 0 4px; }
+    input { width: 100%; padding: 8px 10px; border: 1px solid #cbd2d9; border-radius: 6px; font-size: 15px; box-sizing: border-box; }
+    button { margin-top: 18px; background: #2f6fed; color: #fff; border: 0; border-radius: 6px;
+             padding: 10px 20px; font-size: 15px; font-weight: 600; cursor: pointer; }
+    .stat { margin-left: 12px; color: #52606d; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <h1>Acme Checkout</h1>
+
+    <label for="user">Username</label>
+    <input type="text" id="user" placeholder="Your username">
+
+    <label for="pass">Password</label>
+    <input type="password" id="pass" placeholder="Your password">
+
+    <label for="card">Card number</label>
+    <input type="text" id="card" autocomplete="cc-number" inputmode="numeric" placeholder="Card number">
+
+    <label for="cvv">Card verification code</label>
+    <input type="text" id="cvv" name="cvv" placeholder="CVC">
+
+    <label for="otp">One-time code</label>
+    <input type="text" id="otp" name="otp" autocomplete="one-time-code" placeholder="6-digit code">
+
+    <label for="promo">Promo code</label>
+    <input type="text" id="promo" name="promo_code" placeholder="Optional promo code">
+
+    <button type="button" data-testid="checkout-btn"
+            onclick="document.getElementById('saves').textContent =
+                     String(parseInt(document.getElementById('saves').textContent, 10) + 1)">
+      Place order
+    </button>
+    <span class="stat">orders placed: <b id="saves">0</b></span>
+  </div>
+
+  <script>window.__demoReady = true;</script>
+</body>
+</html>

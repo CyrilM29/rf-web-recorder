@@ -1,5 +1,5 @@
 /*
- * rf-web-recorder v0.4.0 — universal Robot Framework Browser-library recorder.
+ * rf-web-recorder v0.4.1 — universal Robot Framework Browser-library recorder.
  *
  * Hover to highlight + click to capture locators; « rec » records your
  * interactions as replayable Browser-library keywords; « play » replays the
@@ -349,7 +349,8 @@
 /*
  * rf-web-recorder — core/steps.js
  *
- * Step model + compaction rules. Pure logic, unit-testable without a DOM.
+ * Step model + compaction rules + sensitive-field masking. Pure logic,
+ * unit-testable without a DOM.
  *
  * A step is a plain JSON-safe object:
  *   { type, locator?, strategy?, name?, css?, value?, key? }
@@ -422,7 +423,43 @@
     return out;
   }
 
-  return { addStep: addStep, compact: compact, isSame: isSame, stepKey: stepKey };
+  // ---- sensitive-field masking ---------------------------------------------
+  // Fields whose value must never reach the step list / sessionStorage /
+  // clipboard / export in clear text. type=password is the obvious case;
+  // the autocomplete tokens cover payment + OTP + password-manager fields;
+  // the name/id/aria-label patterns catch the same fields on forms that skip
+  // autocomplete. The patterns stay deliberately narrow: a false positive
+  // silently masks a value the user meant to record.
+  var SENSITIVE_AUTOCOMPLETE = /^(cc-number|cc-csc|cc-exp(-month|-year)?|one-time-code|current-password|new-password)$/;
+  var SENSITIVE_HINT = /passw|pwd|cvv|cvc|card.?number|cardnum|(^|[^a-z])(csc|otp)([^a-z]|$)|one.?time.?code|security.?code/;
+
+  function attrOf(el, name) {
+    try {
+      if (el && typeof el.getAttribute === "function") {
+        return String(el.getAttribute(name) || "").toLowerCase();
+      }
+    } catch (e) { /* ignore */ }
+    return "";
+  }
+
+  // Returns the placeholder to record instead of the real value ("<PASSWORD>"
+  // for password inputs, "<SECRET>" for payment/OTP fields), or null when the
+  // value is safe to record.
+  function sensitiveMask(el) {
+    if (!el) return null;
+    var type = attrOf(el, "type") || String(el.type || "").toLowerCase();
+    if (type === "password") return "<PASSWORD>";
+    // autocomplete is a whitespace-separated token list ("billing cc-number")
+    var tokens = attrOf(el, "autocomplete").split(/\s+/);
+    for (var i = 0; i < tokens.length; i++) {
+      if (SENSITIVE_AUTOCOMPLETE.test(tokens[i])) return "<SECRET>";
+    }
+    var hint = attrOf(el, "name") + " " + attrOf(el, "id") + " " + attrOf(el, "aria-label");
+    return SENSITIVE_HINT.test(hint) ? "<SECRET>" : null;
+  }
+
+  return { addStep: addStep, compact: compact, isSame: isSame, stepKey: stepKey,
+           sensitiveMask: sensitiveMask };
 });
 
 // ---- src/core/emit_browser.js --------------------------------------------
@@ -880,6 +917,11 @@
     buildSuite: buildSuite,
     buildResourcePair: buildResourcePair,
     parseSuite: parseSuite,
+    // resource-pair naming helpers, shared with emit_selenium.js
+    slugText: slugText,
+    slugOf: slugOf,
+    titleCase: titleCase,
+    KEYWORD_SHAPES: KEYWORD_SHAPES,
   };
 });
 
@@ -1017,36 +1059,11 @@
   }
 
   // ---- resource-first pair (same shape as emit_browser's) ------------------
-  function slugText(text) {
-    return String(text || "").toUpperCase().replace(/[^A-Z0-9]+/g, "_")
-      .replace(/^_+|_+$/g, "").slice(0, 24).replace(/_+$/g, "");
-  }
-  function slugOf(step, fallback) {
-    // Same rule as emit_browser: an empty/numeric slug names the value, not the
-    // target — fall back to the locator before the generic ELEMENT_<n>.
-    var s = slugText(step.name || step.value);
-    if (!s || /^[0-9_]+$/.test(s)) {
-      var fromLocator = slugText(String(step.locator || "").replace(/^[a-z-]+=/, ""));
-      if (fromLocator && !/^[0-9_]+$/.test(fromLocator)) s = fromLocator;
-    }
-    return s || fallback;
-  }
-  function titleCase(slug) {
-    return String(slug).toLowerCase().split(/_+/).filter(Boolean)
-      .map(function (w) { return w.charAt(0).toUpperCase() + w.slice(1); }).join(" ");
-  }
-  var KEYWORD_SHAPES = {
-    "click": { name: function (h) { return "Click " + h; }, arg: false },
-    "fill": { name: function (h) { return "Fill " + h; }, arg: true, argName: "value" },
-    "select": { name: function (h) { return "Select " + h + " Option"; }, arg: true, argName: "label" },
-    "check": { name: function (h) { return "Check " + h; }, arg: false },
-    "uncheck": { name: function (h) { return "Uncheck " + h; }, arg: false },
-    "assert-visible": { name: function (h) { return h + " Should Be Visible"; }, arg: false },
-    "assert-text": { name: function (h) { return h + " Text Should Be"; }, arg: true, argName: "expected" },
-    "assert-value": { name: function (h) { return h + " Value Should Be"; }, arg: true, argName: "expected" },
-    "assert-count": { name: function (h) { return h + " Count Should Be"; }, arg: true, argName: "expected" },
-    "capture": { name: function (h) { return "Locate " + h; }, arg: false },
-  };
+  // Naming helpers + keyword shapes are shared with emit_browser.js: one
+  // definition, two adapters.
+  var slugOf = base.slugOf;
+  var titleCase = base.titleCase;
+  var KEYWORD_SHAPES = base.KEYWORD_SHAPES;
 
   function buildResourcePair(opts) {
     opts = opts || {};
@@ -1810,8 +1827,9 @@
  * Record mode: clicks / typed values / selects / checkboxes become ordered
  * Browser-library steps; Enter/Tab become Keyboard Key presses; hash/history
  * navigation becomes Wait For Load State. Right-click opens the assertion
- * menu (visible / text / value / count). Passwords are never captured in
- * clear text (value replaced by <PASSWORD>).
+ * menu (visible / text / value / count). Passwords and other sensitive
+ * fields (payment, OTP — see steps.sensitiveMask) are never captured in
+ * clear text (value replaced by <PASSWORD> / <SECRET>).
  *
  * Ported from the author's SAPFX recorder listener (Apache-2.0) and
  * generalized — see NOTICE.
@@ -1845,18 +1863,30 @@
     var panel = null, overlay = null, menu = null;
 
     // ---- persistence (survives page reloads within the tab) ----------------
+    // sessionStorage writes can fail legitimately (private mode, quota,
+    // storage disabled): recording still works, it just won't survive a
+    // reload — warn once instead of failing silently.
+    var persistWarned = false;
+    function persistWarn(e) {
+      if (persistWarned) return;
+      persistWarned = true;
+      try {
+        console.warn("[rf-web-recorder] sessionStorage write failed — " +
+          "steps will not survive a reload:", e);
+      } catch (e2) { /* ignore */ }
+    }
     function loadSteps() {
       try { var s = global.sessionStorage.getItem(STORE_KEY); return s ? JSON.parse(s) : []; }
       catch (e) { return []; }
     }
     function saveSteps() {
-      try { global.sessionStorage.setItem(STORE_KEY, JSON.stringify(steps)); } catch (e) { /* ignore */ }
+      try { global.sessionStorage.setItem(STORE_KEY, JSON.stringify(steps)); } catch (e) { persistWarn(e); }
     }
     function loadName() {
       try { return global.sessionStorage.getItem(NAME_KEY) || DEFAULT_NAME; }
       catch (e) { return DEFAULT_NAME; }
     }
-    function saveName(v) { try { global.sessionStorage.setItem(NAME_KEY, v); } catch (e) { /* ignore */ } }
+    function saveName(v) { try { global.sessionStorage.setItem(NAME_KEY, v); } catch (e) { persistWarn(e); } }
     function startUrl() {
       try { return global.sessionStorage.getItem(URL_KEY) || global.location.href; }
       catch (e) { return global.location.href; }
@@ -1866,13 +1896,13 @@
         if (!global.sessionStorage.getItem(URL_KEY)) {
           global.sessionStorage.setItem(URL_KEY, global.location.href);
         }
-      } catch (e) { /* ignore */ }
+      } catch (e) { persistWarn(e); }
     }
     // The recording FLAG survives navigation too: after a reload + re-injection
     // (snippet re-paste or extension shortcut) recording resumes by itself
     // instead of silently dropping every interaction until the user notices.
     function saveRecording() {
-      try { global.sessionStorage.setItem(REC_KEY, recording ? "1" : ""); } catch (e) { /* ignore */ }
+      try { global.sessionStorage.setItem(REC_KEY, recording ? "1" : ""); } catch (e) { persistWarn(e); }
     }
     function loadRecording() {
       try { return global.sessionStorage.getItem(REC_KEY) === "1"; } catch (e) { return false; }
@@ -1886,20 +1916,33 @@
         btn.textContent = label;
         setTimeout(function () { btn.textContent = btn.__rfrecLabel; }, 700);
       }
-      // writeText rejects async (unfocused document, cross-origin iframe
-      // permissions policy...) — a sync try/catch cannot see it, and the
-      // button must not claim "copied" when nothing was.
+      // Legacy path for contexts without a usable async clipboard (non-secure
+      // origins have no navigator.clipboard; writeText can also reject on an
+      // unfocused document). The flash reports execCommand's actual result —
+      // the button must not claim "copied" when nothing was.
+      function legacyCopy() {
+        var ok = false;
+        try {
+          var ta = doc.createElement("textarea");
+          ta.value = text;
+          ta.style.position = "fixed"; ta.style.opacity = "0";
+          ourTransientHost().appendChild(ta);
+          ta.select();
+          ok = !!(doc.execCommand && doc.execCommand("copy"));
+          ta.remove();
+        } catch (e) { ok = false; }
+        flash(ok ? "copied" : "copy failed");
+      }
       try {
         if (global.navigator.clipboard) {
           var p = global.navigator.clipboard.writeText(text);
           if (p && typeof p.then === "function") {
-            p.then(function () { flash("copied"); },
-                   function () { flash("copy failed"); });
+            p.then(function () { flash("copied"); }, legacyCopy);
             return;
           }
         }
-        flash("copied");
-      } catch (e) { flash("copy failed"); }
+        legacyCopy();
+      } catch (e) { legacyCopy(); }
     }
     // Our own transient DOM helpers (download anchor, import file input) are
     // parented to the PANEL, never to documentElement: their synthetic .click()
@@ -1910,16 +1953,22 @@
     function ourTransientHost() {
       return doc.getElementById("__rfrecPanel") || doc.documentElement;
     }
-    // Dependency-free file download via a Blob anchor click.
+    // Dependency-free file download via a Blob anchor click. A failure
+    // (Blob/createObjectURL blocked by a strict CSP or sandbox) must not
+    // break the page — it is surfaced in the hint line instead.
     function download(text, filename) {
-      var blob = new Blob([text], { type: "text/plain;charset=utf-8" });
-      var url = URL.createObjectURL(blob);
-      var a = doc.createElement("a");
-      a.href = url; a.download = filename; a.style.display = "none";
-      ourTransientHost().appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      try {
+        var blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+        var url = URL.createObjectURL(blob);
+        var a = doc.createElement("a");
+        a.href = url; a.download = filename; a.style.display = "none";
+        ourTransientHost().appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      } catch (e) {
+        if (panel) panel.setHint("Download failed (" + filename + "): " + String((e && e.message) || e));
+      }
     }
     function stepLine(st) { return emit.emitStep(st)[0] || st.type; }
     function renderPanel() {
@@ -1940,14 +1989,19 @@
       return !!((panel && panel.contains(node)) || (menu && menu.contains(node)));
     }
     function bestFor(el) {
+      // Copy, never mutate what bestLocator returned.
       var best = locators.bestLocator(el, doc);
-      best.name = locators.accName(el, doc).slice(0, 40);
-      // Anchored CSS path fallback (always the last candidate): stored on every
-      // step so non-Playwright emitters (SeleniumLibrary) can translate steps
-      // whose winning selector uses an engine they lack (role= / text=).
       var cands = best.candidates;
-      best.css = cands && cands.length ? cands[cands.length - 1].selector : null;
-      return best;
+      return {
+        selector: best.selector,
+        strategy: best.strategy,
+        candidates: cands,
+        name: locators.accName(el, doc).slice(0, 40),
+        // Anchored CSS path fallback (always the last candidate): stored on
+        // every step so non-Playwright emitters (SeleniumLibrary) can translate
+        // steps whose winning selector uses an engine they lack (role=/text=).
+        css: cands && cands.length ? cands[cands.length - 1].selector : null,
+      };
     }
     function stepFields(type, best, extra) {
       var step = { type: type, locator: best.selector, strategy: best.strategy,
@@ -1955,10 +2009,9 @@
       for (var k in (extra || {})) step[k] = extra[k];
       return step;
     }
-    function isPasswordField(t) {
-      var ty = (t && t.getAttribute) ? String(t.getAttribute("type") || t.type || "") : String(t.type || "");
-      return ty.toLowerCase() === "password";
-    }
+    // Password / payment / OTP detection lives in the pure core (unit-tested
+    // there); returns the placeholder to record instead, or null.
+    function sensitiveMask(t) { return stepsCore.sensitiveMask(t); }
 
     // ---- hover highlight (cheap label: first candidate, no uniqueness scan) -
     var raf = 0, lastEvt = null;
@@ -2048,8 +2101,9 @@
       if (tag === "input" && type === "file") return;
       if ((tag === "input" || tag === "textarea") && "value" in t) {
         best = bestFor(t);
-        // Passwords never reach the export/clipboard/sessionStorage in clear text.
-        var value = isPasswordField(t) ? "<PASSWORD>" : t.value;
+        // Sensitive values (password / payment / OTP) never reach the
+        // export/clipboard/sessionStorage in clear text.
+        var value = sensitiveMask(t) || t.value;
         addStep(stepFields("fill", best, { value: value }));
       }
     }
@@ -2102,7 +2156,8 @@
       var best = bestFor(target);
       var text = locators.collapse(target.textContent || "").slice(0, 200);
       var value = ("value" in target) ? String(target.value) : "";
-      if (isPasswordField(target)) value = "<PASSWORD>";
+      var mask = sensitiveMask(target);
+      if (mask) value = mask;
       var count = candidateCount(best);
       menu.open(event.clientX, event.clientY, [
         { label: "Assert visible", onPick: function () {
@@ -2334,7 +2389,7 @@
             if (panel) panel.setTestName(parsed.testName);
           }
           if (parsed.url) {
-            try { global.sessionStorage.setItem(URL_KEY, parsed.url); } catch (e) { /* ignore */ }
+            try { global.sessionStorage.setItem(URL_KEY, parsed.url); } catch (e) { persistWarn(e); }
           }
           saveSteps();
           renderPanel();
@@ -2489,7 +2544,7 @@
   var instance = CORE.recorder.create();
 
   global.__RFREC = {
-    version: "0.4.0",
+    version: "0.4.1",
     start: instance.start,
     stop: instance.stop,
     isRunning: instance.isRunning,

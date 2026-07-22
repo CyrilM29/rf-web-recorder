@@ -49,6 +49,13 @@ contenu complet de `dist/recorder_snippet.js`. Le panneau apparaît en bas à
 droite ; vous êtes en mode capture. `Échap` arrête (les steps sont conservés ;
 recoller ou `window.__RFREC.start()` reprend).
 
+> ⚠️ Ne collez que du code que vous avez construit vous-même depuis des
+> sources que vous pouvez lire (`node build.mjs`). Coller du JavaScript non
+> vérifié dans la console DevTools lui donne le contrôle total de la page
+> (self-XSS) — n'étendez jamais cette habitude à du code venu de chats, gists
+> ou sites que vous n'avez pas audités. Voir
+> [Sécurité et confidentialité](#sécurité-et-confidentialité).
+
 ### B. Extension Chrome
 
 ```
@@ -107,7 +114,7 @@ deviennent des steps ordonnés —
 | Interaction | Keyword émis |
 |---|---|
 | clic | `Click    <locator>` |
-| saisie dans input/textarea | `Fill Text    <locator>    <valeur>` (mots de passe → `<PASSWORD>`) |
+| saisie dans input/textarea | `Fill Text    <locator>    <valeur>` (mots de passe → `<PASSWORD>`, champs paiement/OTP → `<SECRET>`) |
 | choix d'une option | `Select Options By    <locator>    label    <libellé>` |
 | cocher / décocher une case | `Check Checkbox` / `Uncheck Checkbox` |
 | clic sur un bouton radio | `Click    <locator>` |
@@ -249,13 +256,48 @@ rien n'est perdu en silence. Limite assumée : le CSS de Playwright perce les
 shadow roots ouverts, celui de Selenium non — un step capturé dans du shadow
 DOM peut ne pas se rejouer sous SeleniumLibrary.
 
+## Sécurité et confidentialité
+
+- **Les valeurs enregistrées persistent en clair** dans le `sessionStorage`
+  de l'onglet (`__rfrecSteps`) — c'est ce qui permet à un enregistrement de
+  survivre aux rechargements de page. Tout ce qui est saisi pendant
+  l'enregistrement (hors champs sensibles masqués, ci-dessous) est lisible
+  par tout script de la même origine, et y reste jusqu'au bouton `clear` du
+  panneau ou à la fermeture de l'onglet. Effacez l'enregistrement quand vous
+  avez terminé, et évitez d'enregistrer de vraies données personnelles sur
+  des pages auxquelles vous ne faites pas confiance.
+- **Les champs sensibles sont masqués à la capture.** Les champs mot de passe
+  enregistrent `<PASSWORD>` ; les champs paiement et code à usage unique
+  enregistrent `<SECRET>` (détection via les jetons `autocomplete` —
+  `cc-number`, `cc-csc`, `cc-exp`, `one-time-code`, `current-password`,
+  `new-password` — ou un name/id/aria-label ressemblant à un numéro de
+  carte / CVC / OTP). La vraie valeur n'atteint jamais la liste de steps, le
+  sessionStorage, le presse-papiers ni un export ; remplacez le placeholder
+  par une variable Robot Framework dans la suite exportée. La détection est
+  heuristique : relisez un export avant de le partager.
+- **Le snippet console a par nature la forme d'un self-XSS** : il n'existe
+  que pour les environnements où les extensions sont interdites.
+  Construisez-le vous-même, lisez-le si vous voulez (c'est de la simple
+  concaténation de sources), et ne collez jamais dans une console du code
+  que vous n'avez pas audité.
+
 ## Développement
 
 ```
 node build.mjs                  # concatène src/ -> dist/recorder_snippet.js + extension/recorder.js
 node --test "test/*.test.mjs"   # tests unitaires (node:test, sans jsdom — cœur duck-typé)
 node package_extension.mjs      # zippe extension/ -> dist/rf-web-recorder-extension-<version>.zip
+npm run test:e2e                # E2E optionnel : pilote le bundle CONSTRUIT dans un vrai Chromium
 ```
+
+La suite E2E (`test/e2e/recorder_live.robot`) est la seule partie du dépôt
+avec des dépendances — celles que vous avez déjà en tant qu'utilisateur des
+exports : `pip install robotframework robotframework-browser` +
+`rfbrowser init`. Elle injecte `dist/recorder_snippet.js` dans une page de
+checkout fixture et vérifie en live : masquage des champs sensibles (mot de
+passe / carte / CVC / OTP n'atteignent jamais le sessionStorage ni un export
+en clair), enregistrement, reprise après rechargement de page, rejeu dans la
+page, et les deux saveurs d'export.
 
 Arborescence :
 
@@ -271,6 +313,7 @@ Arborescence :
 | `src/main.js` | Bootstrap `window.__RFREC` (API start/stop/export). |
 | `extension/` | Extension MV3 (`recorder.js` y est généré par le build). |
 | `test/` | Suites `node --test` du cœur pur + des sorties de build. |
+| `test/e2e/` | Suite Robot Framework Browser optionnelle pilotant le bundle construit dans un vrai Chromium (masquage, enregistrement, reprise, rejeu, exports). |
 
 Les modules `core/` n'exigent jamais un vrai DOM : ils acceptent tout objet
 exposant `tagName` / `getAttribute()` / `textContent` / `parentElement` /
@@ -305,6 +348,9 @@ vrai DOM se trouve simplement satisfaire la même interface à l'exécution.
   permis).
 - L'unicité d'un localisateur est évaluée au moment de la capture, sur l'état
   courant du DOM (shadow roots ouverts compris).
+- L'unicité du chemin CSS ancré est vérifiée avec le moteur CSS de la page ;
+  quand la cible est dans un shadow tree que ce moteur ne voit pas, la
+  construction du chemin est considérée fiable plutôt que re-vérifiée.
 
 ## Licence
 
