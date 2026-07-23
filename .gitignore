@@ -12,3 +12,7 @@ demo/
 
 # Local notes / TODO scratch files — never published
 *.local.md
+
+# Internal comms base (positioning, tone, post drafts) — strategy material,
+# kept local like demo/; never part of the public repo
+comms/
