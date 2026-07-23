@@ -6,6 +6,12 @@
 code Robot Framework ciblant la [bibliothèque Browser](https://robotframework-browser.org/)
 (basée sur Playwright).**
 
+![Le panneau du recorder par-dessus une page web : chaque action utilisateur devient un step Robot Framework avec un localisateur stable (rôle + nom accessible, data-testid)](docs/recorder-in-action.png)
+
+*Le panneau du recorder par-dessus la page testée : chaque clic, saisie ou
+sélection devient un step Robot Framework lisible avec un localisateur stable,
+et un clic droit ajoute une assertion (step 7).*
+
 Indépendant du framework : il fonctionne à l'identique sur des pages React,
 Angular, Vue, HTML vanilla et Web Components, parce qu'il ne parle jamais à un
 framework — il lit les standards que tous les frameworks finissent par

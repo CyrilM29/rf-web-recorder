@@ -6,6 +6,12 @@
 code targeting the [Browser library](https://robotframework-browser.org/)
 (Playwright-based).**
 
+![The recorder panel over a web page: each user action becomes a Robot Framework step with a stable locator (role + accessible name, data-testid)](docs/recorder-in-action.png)
+
+*The recorder panel over the page being tested: each click, keystroke or
+selection becomes a readable Robot Framework step with a stable locator, and a
+right-click adds an assertion (step 7).*
+
 Framework-agnostic: it works the same on React, Angular, Vue, vanilla HTML and
 Web Components pages, because it never talks to a framework — it reads the
 standards the frameworks all end up producing: the DOM, ARIA roles and
