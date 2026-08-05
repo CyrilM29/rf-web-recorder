@@ -1,11 +1,11 @@
 /*
- * build.mjs — dependency-free bundler.
+ * build.mjs: dependency-free bundler.
  *
  * Concatenates the src/ modules in order into a single IIFE and writes it to:
  *   dist/recorder_snippet.js   (standalone console-paste snippet)
  *   extension/recorder.js      (MAIN-world content script of the MV3 extension)
  *
- * Both outputs are byte-identical apart from nothing — one bundle, two homes —
+ * Both outputs are byte-identical apart from nothing: one bundle, two homes,
  * and carry a generated-file header. Run: `node build.mjs`.
  */
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
@@ -21,6 +21,7 @@ const ORDER = [
   "src/core/steps.js",
   "src/core/emit_browser.js",
   "src/core/emit_selenium.js",   // depends on emit_browser (rfEscape, splitScenarios)
+  "src/core/emit_report.js",     // depends on emit_browser (splitScenarios, emitStep)
   "src/core/resolve.js",         // depends on locators (ariaRole, accName, collapse)
   "src/panel/panel.js",
   "src/recorder.js",
@@ -31,7 +32,7 @@ export function build() {
   const pkg = JSON.parse(readFileSync(path.join(ROOT, "package.json"), "utf8"));
   const header = [
     "/*",
-    " * rf-web-recorder v" + pkg.version + " — universal Robot Framework Browser-library recorder.",
+    " * rf-web-recorder v" + pkg.version + ": universal Robot Framework Browser-library recorder.",
     " *",
     " * Hover to highlight + click to capture locators; « rec » records your",
     " * interactions as replayable Browser-library keywords; « play » replays the",
@@ -44,7 +45,7 @@ export function build() {
     " *   1. paste this whole file into the DevTools console, or",
     " *   2. load the browser extension in extension/ and click its icon.",
     " *",
-    " * GENERATED FILE — do not edit. Sources live in src/; run `node build.mjs`.",
+    " * GENERATED FILE: do not edit. Sources live in src/; run `node build.mjs`.",
     " * License: Apache-2.0 (see LICENSE / NOTICE).",
     " */",
     "",

@@ -1,5 +1,5 @@
 /*
- * rf-web-recorder — recorder.js
+ * rf-web-recorder: recorder.js
  *
  * Event wiring: capture + record modes, in-panel replay, hover highlight,
  * right-click assertion menu, sessionStorage persistence, export + .robot
@@ -13,11 +13,11 @@
  * Browser-library steps; Enter/Tab become Keyboard Key presses; hash/history
  * navigation becomes Wait For Load State. Right-click opens the assertion
  * menu (visible / text / value / count). Passwords and other sensitive
- * fields (payment, OTP — see steps.sensitiveMask) are never captured in
+ * fields (payment, OTP: see steps.sensitiveMask) are never captured in
  * clear text (value replaced by <PASSWORD> / <SECRET>).
  *
  * Ported from the author's SAPFX recorder listener (Apache-2.0) and
- * generalized — see NOTICE.
+ * generalized: see NOTICE.
  */
 (function (global) {
   "use strict";
@@ -36,7 +36,8 @@
 
   function createRecorder() {
     var locators = CORE.locators, stepsCore = CORE.steps, emit = CORE.emit,
-        emitSelenium = CORE.emitSelenium, resolveCore = CORE.resolve, ui = CORE.panel;
+        emitSelenium = CORE.emitSelenium, emitReport = CORE.report,
+        resolveCore = CORE.resolve, ui = CORE.panel;
     var doc = global.document;
 
     var running = false;
@@ -50,13 +51,13 @@
     // ---- persistence (survives page reloads within the tab) ----------------
     // sessionStorage writes can fail legitimately (private mode, quota,
     // storage disabled): recording still works, it just won't survive a
-    // reload — warn once instead of failing silently.
+    // reload: warn once instead of failing silently.
     var persistWarned = false;
     function persistWarn(e) {
       if (persistWarned) return;
       persistWarned = true;
       try {
-        console.warn("[rf-web-recorder] sessionStorage write failed — " +
+        console.warn("[rf-web-recorder] sessionStorage write failed: " +
           "steps will not survive a reload:", e);
       } catch (e2) { /* ignore */ }
     }
@@ -103,7 +104,7 @@
       }
       // Legacy path for contexts without a usable async clipboard (non-secure
       // origins have no navigator.clipboard; writeText can also reject on an
-      // unfocused document). The flash reports execCommand's actual result —
+      // unfocused document). The flash reports execCommand's actual result:
       // the button must not claim "copied" when nothing was.
       function legacyCopy() {
         var ok = false;
@@ -140,7 +141,7 @@
     }
     // Dependency-free file download via a Blob anchor click. A failure
     // (Blob/createObjectURL blocked by a strict CSP or sandbox) must not
-    // break the page — it is surfaced in the hint line instead.
+    // break the page: it is surfaced in the hint line instead.
     function download(text, filename) {
       try {
         var blob = new Blob([text], { type: "text/plain;charset=utf-8" });
@@ -217,7 +218,7 @@
 
     // ---- click: capture (inspect) or record (step) -------------------------
     // The floating menu closes itself on MOUSEDOWN (panel.js onAway); by the
-    // time the paired click event reaches us, isOpen() is already false — so
+    // time the paired click event reaches us, isOpen() is already false: so
     // the dismissal is remembered here and the click that follows is swallowed
     // instead of being recorded/captured as a spurious step.
     var menuDismissedAt = 0;
@@ -243,7 +244,7 @@
         addStep(stepFields("click", best, { t: Date.now() }));  // t: dedup window for deliberate repeats
         return;                                       // never block the app while recording
       }
-      // capture mode: inspection only — swallow the click
+      // capture mode: inspection only, swallow the click
       event.preventDefault(); event.stopPropagation();
       var cap = bestFor(target);
       captures.push({ selector: cap.selector, strategy: cap.strategy,
@@ -281,7 +282,7 @@
         return;
       }
       // File inputs have no replayable value (C:\fakepath\...) and assigning
-      // one at replay time throws — a real upload needs Upload File By
+      // one at replay time throws: a real upload needs Upload File By
       // Selector written by hand, so nothing useful can be recorded here.
       if (tag === "input" && type === "file") return;
       if ((tag === "input" || tag === "textarea") && "value" in t) {
@@ -310,7 +311,7 @@
       if (event.key === "Enter" || event.key === "Tab") {
         // Deferred one tick ON PURPOSE: a field's `change` fires on blur, i.e.
         // AFTER this keydown (Tab moves focus away, Enter submits). Recording
-        // the key immediately put it BEFORE the fill it actually followed —
+        // the key immediately put it BEFORE the fill it actually followed:
         // replaying that pressed Enter on an empty field, then filled it.
         // Caught by the first visible-browser demo run.
         // Kept in `pendingPress` so onBeforeUnload can flush it if Enter
@@ -393,7 +394,7 @@
     }
     // Assign through the NATIVE prototype setter: React's controlled inputs
     // track the last value set via the native accessor and dedupe `input`
-    // events whose value "didn't change" — a plain el.value = x is exactly
+    // events whose value "didn't change": a plain el.value = x is exactly
     // what gets deduped, so fills silently no-oped on React apps.
     function setNativeValue(el, value) {
       var proto = null;
@@ -439,7 +440,7 @@
       highlightElement(el, stepLine(st));
       switch (plan.action) {
         case "click":
-          // focus between down and up, like a native click — so a recorded
+          // focus between down and up, like a native click: so a recorded
           // press that follows lands on this element, not on <body>
           synthMouse(el, "mousedown");
           tryFocus(el);
@@ -519,7 +520,7 @@
     function exportAs(format) {
       var opts = { testName: testName(), url: startUrl(), steps: steps };
       // Emission adapter: Browser library by default, SeleniumLibrary on demand
-      // (locator translation lives in emit_selenium.js — same export shapes).
+      // (locator translation lives in emit_selenium.js: same export shapes).
       var target = (format.indexOf("selenium-") === 0) ? emitSelenium : emit;
       format = format.replace(/^selenium-/, "");
       if (format === "resource-pair") {
@@ -527,12 +528,22 @@
         download(pair.resource, pair.resourceName);
         // Chrome's multiple-download protection targets same-task downloads:
         // spacing the second one out gives the user a visible prompt instead
-        // of a silently missing .robot — and the hint says to expect 2 files.
+        // of a silently missing .robot, and the hint says to expect 2 files.
         setTimeout(function () { download(pair.suite, fileSlug() + ".robot"); }, 350);
         copy(pair.suite);
         if (panel) {
-          panel.setHint("Exporting 2 files (.resource + .robot) — allow multiple downloads if the browser asks.");
+          panel.setHint("Exporting 2 files (.resource + .robot): allow multiple downloads if the browser asks.");
         }
+      } else if (format === "report") {
+        // Self-contained HTML documentation page (phrase + exact RF line per
+        // step, one chapter per scenario): documentation, never a test.
+        var page = emitReport.buildReport(opts, target);
+        download(page, fileSlug() + "-report.html");
+        copy(page);
+      } else if (format === "plan") {
+        var plan = emitReport.buildPlan(opts);
+        download(plan, fileSlug() + "-plan.md");
+        copy(plan);
       } else if (format === "body") {
         copy(target.emitBody(steps));
       } else {
@@ -547,6 +558,8 @@
         { label: "Download .resource + .robot pair (Browser)", onPick: function () { exportAs("resource-pair"); } },
         { label: "Download .robot suite (SeleniumLibrary)", onPick: function () { exportAs("selenium-robot"); } },
         { label: "Download .resource + .robot pair (SeleniumLibrary)", onPick: function () { exportAs("selenium-resource-pair"); } },
+        { label: "Download HTML report (documentation)", onPick: function () { exportAs("report"); } },
+        { label: "Download Markdown test plan (draft)", onPick: function () { exportAs("plan"); } },
         { label: "Copy step body to clipboard", onPick: function () { exportAs("body"); } },
         { label: "Import .robot…", onPick: importRobot },
       ]);
@@ -555,7 +568,7 @@
     // ---- .robot re-import --------------------------------------------------
     // Reads an exported Browser-library suite back into the step list
     // (REPLACES the current steps). Unparseable lines are counted in the
-    // hint — parseSuite surfaces them, it never drops them silently.
+    // hint: parseSuite surfaces them, it never drops them silently.
     function importRobot() {
       var input = doc.createElement("input");
       input.type = "file";
@@ -580,7 +593,7 @@
           renderPanel();
           if (panel) {
             panel.setHint("Imported " + steps.length + " step(s) from " + file.name +
-              (parsed.skipped.length ? " — skipped " + parsed.skipped.length + " unparseable line(s)" : "") + ".");
+              (parsed.skipped.length ? ", skipped " + parsed.skipped.length + " unparseable line(s)" : "") + ".");
           }
         };
         reader.readAsText(file);
@@ -627,6 +640,19 @@
       notifyState();
     }
 
+    // Counts iframes whose document this frame cannot touch (cross-origin or
+    // sandboxed): each one is a recording blind spot for this bundle instance.
+    function crossOriginFrameCount() {
+      var n = 0;
+      try {
+        var frames = doc.querySelectorAll("iframe");
+        for (var i = 0; i < frames.length; i++) {
+          try { if (!frames[i].contentDocument) n++; } catch (e) { n++; }
+        }
+      } catch (e) { /* ignore */ }
+      return n;
+    }
+
     // ---- lifecycle ---------------------------------------------------------
     function start() {
       if (running) return;
@@ -659,6 +685,11 @@
       });
       panel.setTestName(loadName());
       panel.setHint(HINT_CAPTURE);
+      // Cross-origin iframes are invisible to this bundle's listeners (the
+      // console snippet only sees its own frame; the extension injects
+      // allFrames, one panel per frame): warn in the TOP frame instead of
+      // silently missing their steps. Ported from the SAPFX web recorder.
+      if (global.top === global.self) panel.setFrameWarn(crossOriginFrameCount());
       renderPanel();
       doc.addEventListener("mousemove", onMove, true);
       doc.addEventListener("mousedown", onMouseDown, true);
@@ -694,7 +725,7 @@
       if (panel) panel.destroy();
       panel = overlay = menu = null;
       notifyState();
-      console.info("[rf-web-recorder] stopped (steps kept — start again to resume).");
+      console.info("[rf-web-recorder] stopped (steps kept: start again to resume).");
     }
 
     return {

@@ -14,13 +14,13 @@ et un clic droit ajoute une assertion (step 7).*
 
 Indépendant du framework : il fonctionne à l'identique sur des pages React,
 Angular, Vue, HTML vanilla et Web Components, parce qu'il ne parle jamais à un
-framework — il lit les standards que tous les frameworks finissent par
+framework : il lit les standards que tous les frameworks finissent par
 produire : le DOM, les rôles ARIA et les noms accessibles.
 
 Deux modes de livraison, un seul et même bundle :
 
-1. **Extension Chrome (Manifest V3)** — un clic sur l'icône de la barre d'outils.
-2. **Snippet console autonome** — collez un fichier dans les DevTools. Pour les
+1. **Extension Chrome (Manifest V3)** : un clic sur l'icône de la barre d'outils.
+2. **Snippet console autonome** : collez un fichier dans les DevTools. Pour les
    environnements verrouillés où installer une extension est interdit.
 
 Zéro dépendance : pas de paquet npm, pas de bundler, pas d'outillage au-delà de
@@ -28,18 +28,18 @@ Node lui-même. Licence : Apache-2.0.
 
 ## Pourquoi pas Playwright codegen ou Selenium IDE ?
 
-Ce sont de bons enregistreurs — pour leurs propres écosystèmes. `playwright
+Ce sont de bons enregistreurs : pour leurs propres écosystèmes. `playwright
 codegen` émet du code de test Playwright (TypeScript/Python…), Selenium IDE son
 format `.side` ou des bindings Selenium. **Aucun des deux n'émet des keywords
 de la bibliothèque Browser de Robot Framework** : les équipes RF finissent par
 traduire chaque étape à la main. rf-web-recorder émet des lignes `Click` /
-`Fill Text` / `Get Text` à coller telles quelles dans un `.robot` — ou exporte
+`Fill Text` / `Get Text` à coller telles quelles dans un `.robot`, ou exporte
 directement une suite exécutable, ou une **paire resource-first** où les
 localisateurs vivent dans un `.resource` et où le test se lit comme du langage
 métier (le patron que les équipes RF maintiennent réellement). Il reprend
-aussi les bons côtés du workflow Selenium IDE — rejeu dans le panneau,
+aussi les bons côtés du workflow Selenium IDE : rejeu dans le panneau,
 édition des steps sur place, plusieurs tests par session, ré-import d'une
-suite exportée — sans adopter son enregistrement de contrôle de flux (voir
+suite exportée, sans adopter son enregistrement de contrôle de flux (voir
 les non-objectifs assumés plus bas).
 
 ## Démarrage rapide
@@ -58,7 +58,7 @@ recoller ou `window.__RFREC.start()` reprend).
 > ⚠️ Ne collez que du code que vous avez construit vous-même depuis des
 > sources que vous pouvez lire (`node build.mjs`). Coller du JavaScript non
 > vérifié dans la console DevTools lui donne le contrôle total de la page
-> (self-XSS) — n'étendez jamais cette habitude à du code venu de chats, gists
+> (self-XSS) : n'étendez jamais cette habitude à du code venu de chats, gists
 > ou sites que vous n'avez pas audités. Voir
 > [Sécurité et confidentialité](#sécurité-et-confidentialité).
 
@@ -103,7 +103,7 @@ sur chaque step : la robustesse se juge d'un coup d'œil.
 | 6 | Chemin CSS ancré | `[id="main"] > form:nth-of-type(1) > button:nth-of-type(2)` | Ancêtre à id stable le plus proche + chaîne `nth-of-type`. Toujours disponible. |
 
 Shadow DOM : le moteur CSS de Playwright perce automatiquement les shadow roots
-**ouverts** — les chemins CSS restent donc valables sur les pages Web
+**ouverts** : les chemins CSS restent donc valables sur les pages Web
 Components ; le constructeur de chemin franchit les frontières de shadow root
 ouvertes avec un combinateur descendant.
 
@@ -115,7 +115,7 @@ prête à coller et liste l'élément dans le panneau, avec un bouton de copie p
 stratégie candidate.
 
 **Mode record** (bouton `rec`, popup, ou `Alt+Shift+U`) : vos manipulations
-deviennent des steps ordonnés —
+deviennent des steps ordonnés :
 
 | Interaction | Keyword émis |
 |---|---|
@@ -130,15 +130,15 @@ deviennent des steps ordonnés —
 La compaction est automatique : les doublons quasi simultanés sont
 dédoublonnés (un second clic VOLONTAIRE sur le même bouton est conservé), les
 saisies consécutives sur le même champ ne gardent que la valeur finale, les
-attentes de chargement consécutives fusionnent. Les steps — et l'état
-d'enregistrement — survivent aux rechargements de page (sessionStorage) :
+attentes de chargement consécutives fusionnent. Les steps, et l'état
+d'enregistrement, survivent aux rechargements de page (sessionStorage) :
 après une navigation complète, ré-injectez (recollez le snippet ou
 `Alt+Shift+U`) et l'enregistrement reprend où il en était. Les steps se
 réordonnent (↑ ↓) et se suppriment (✕) dans le panneau ; le nom du test est
 éditable.
 
 **Rejeu dans le panneau** (bouton `play`) : les steps enregistrés se rejouent
-séquentiellement (~350 ms d'intervalle) sur la page vivante — les clics
+séquentiellement (~350 ms d'intervalle) sur la page vivante : les clics
 émettent de vrais événements mousedown/mouseup/click, les saisies posent la
 valeur puis émettent input+change, les selects choisissent l'option par
 libellé, les touches partent vers l'élément focalisé, et les **assertions
@@ -150,19 +150,19 @@ rouge et nomme la raison dans la ligne d'indice ; un succès affiche
 jamais ses propres événements synthétiques. Les saisies passent par le
 **setter natif** de l'élément avec un vrai focus, donc les inputs contrôlés
 (React et consorts) les voient ; les frameworks qui n'acceptent que les
-gestes authentiques peuvent encore ignorer les clics synthétiques — la suite
+gestes authentiques peuvent encore ignorer les clics synthétiques : la suite
 exportée, elle, se rejoue via la vraie bibliothèque Browser.
 
 **Édition sur place** : double-cliquez sur une ligne de step pour l'éditer en
-ligne — la valeur pour les steps qui en portent une (saisie / select /
+ligne : la valeur pour les steps qui en portent une (saisie / select /
 assertions), sinon la touche (press), le nom du scénario (marqueurs) ou le
 localisateur. Entrée valide, Échap annule. Éditer un localisateur à la main
 efface sa pastille de stratégie et son repli CSS enregistrés (ils ne
 décrivent plus le nouveau localisateur).
 
 **Plusieurs tests par session** (bouton `+test`) : nommez le scénario suivant
-dans l'invite en ligne et continuez d'enregistrer — une ligne de marqueur de
-scénario (`— Test: nom —`) est ajoutée, et chaque export découpe
+dans l'invite en ligne et continuez d'enregistrer : une ligne de marqueur de
+scénario (`· Test: nom ·`) est ajoutée, et chaque export découpe
 l'enregistrement en plusieurs entrées `*** Test Cases ***` : le premier test
 porte le nom éditable et l'amorce `New Browser`/`New Page`, chaque marqueur
 nomme le test suivant, et les tests suivants **continuent la même session
@@ -195,11 +195,11 @@ supprimé que pendant le mode record.
 Le bouton `export` du panneau propose cinq formats (le bouton **Export** du
 popup utilise le premier) :
 
-1. **Suite `.robot` complète (Browser)** — `Library    Browser`, un test nommé
+1. **Suite `.robot` complète (Browser)** : `Library    Browser`, un test nommé
    d'après le champ de nom éditable, démarrant par
    `New Browser    chromium    headless=False` puis `New Page    <url>`.
    Téléchargée et copiée dans le presse-papiers.
-2. **Paire resource-first (Browser)** — `recorded_keywords.resource` (chaque
+2. **Paire resource-first (Browser)** : `recorded_keywords.resource` (chaque
    localisateur distinct devient une variable `${LOC_<N>_<SLUG>}` + de petits
    keywords d'action comme `Fill Username`) et une suite `.robot` qui n'appelle
    **que ces keywords** : aucun localisateur n'apparaît dans le test. Quand le
@@ -224,24 +224,34 @@ popup utilise le premier) :
    log au lieu de la masquer. Les keywords à valeur gardent leur `[Arguments]`
    et utilisent l'argument dans les deux branches. (L'émetteur SeleniumLibrary
    reste volontairement inchangé : il consomme déjà directement le repli CSS
-   pour les localisateurs `role=`/`text=` — un IF/ELSE ne ferait que rejouer
+   pour les localisateurs `role=`/`text=` : un IF/ELSE ne ferait que rejouer
    le même sélecteur.)
-3. **Suite `.robot` complète (SeleniumLibrary)** — le même enregistrement, émis
+3. **Suite `.robot` complète (SeleniumLibrary)** : le même enregistrement, émis
    en keywords SeleniumLibrary (`Click Element`, `Input Text`,
    `Select From List By Label`, `Element Text Should Be`,
    `Press Keys    None    ENTER`…), amorcé par `Open Browser    <url>    Chrome`.
-4. **Paire resource-first (SeleniumLibrary)** — le même patron sans
+4. **Paire resource-first (SeleniumLibrary)** : le même patron sans
    localisateur dans le test, saveur SeleniumLibrary.
-5. **Corps de steps brut** — presse-papiers uniquement (keywords Browser), pour
+5. **Rapport HTML (documentation)** : une page auto-contenue (CSS inline, sans
+   JS, sans ressource externe) qui documente l'enregistrement : un chapitre
+   par test, et pour chaque step la phrase factuelle en anglais à côté de la
+   ligne keyword exacte (le rapport n'invente jamais ; les valeurs masquées
+   sont signalées comme telles). De la documentation, jamais un test :
+   l'enregistrement brut fait foi. Concept rapporté du recorder web SAPFX.
+6. **Plan de test Markdown (brouillon)** : le même phrasé sous forme de plan
+   prêt à relire : une section par scénario, des étapes numérotées lisibles
+   métier, les résultats attendus laissés au relecteur, et une annexe
+   « Recorded locators » pour que les localisateurs restent hors des étapes.
+7. **Corps de steps brut** : presse-papiers uniquement (keywords Browser), pour
    coller dans un test existant.
 
 Le même menu propose aussi **Import .robot…** : choisissez une suite
 Browser exportée précédemment et elle est reconvertie en liste de steps
-(remplaçant les steps courants), noms de tests compris — plusieurs tests
+(remplaçant les steps courants), noms de tests compris : plusieurs tests
 deviennent des marqueurs de scénario, le premier restaure le nom du test,
 `New Page` restaure l'URL de départ. Les lignes que l'analyseur ne comprend
 pas (appels de keywords resource, `[Tags]`, `Log`…) sont comptées comme
-ignorées dans la ligne d'indice — jamais perdues en silence.
+ignorées dans la ligne d'indice, jamais perdues en silence.
 Export → import → export boucle sans perte sur l'ensemble des steps
 supportés.
 
@@ -257,15 +267,15 @@ chaque localisateur enregistré :
 | `role=button[name="Submit"]`, `text="…"` | `css:` + le **repli chemin CSS** enregistré avec chaque step |
 
 Les steps enregistrés avant la v0.2 (sans repli CSS stocké) qui utilisaient un
-sélecteur `role=`/`text=` sont conservés en commentaires `# untranslatable…` —
+sélecteur `role=`/`text=` sont conservés en commentaires `# untranslatable…` :
 rien n'est perdu en silence. Limite assumée : le CSS de Playwright perce les
-shadow roots ouverts, celui de Selenium non — un step capturé dans du shadow
+shadow roots ouverts, celui de Selenium non : un step capturé dans du shadow
 DOM peut ne pas se rejouer sous SeleniumLibrary.
 
 ## Sécurité et confidentialité
 
 - **Les valeurs enregistrées persistent en clair** dans le `sessionStorage`
-  de l'onglet (`__rfrecSteps`) — c'est ce qui permet à un enregistrement de
+  de l'onglet (`__rfrecSteps`) : c'est ce qui permet à un enregistrement de
   survivre aux rechargements de page. Tout ce qui est saisi pendant
   l'enregistrement (hors champs sensibles masqués, ci-dessous) est lisible
   par tout script de la même origine, et y reste jusqu'au bouton `clear` du
@@ -274,9 +284,9 @@ DOM peut ne pas se rejouer sous SeleniumLibrary.
   des pages auxquelles vous ne faites pas confiance.
 - **Les champs sensibles sont masqués à la capture.** Les champs mot de passe
   enregistrent `<PASSWORD>` ; les champs paiement et code à usage unique
-  enregistrent `<SECRET>` (détection via les jetons `autocomplete` —
+  enregistrent `<SECRET>` (détection via les jetons `autocomplete` :
   `cc-number`, `cc-csc`, `cc-exp`, `one-time-code`, `current-password`,
-  `new-password` — ou un name/id/aria-label ressemblant à un numéro de
+  `new-password`, ou un name/id/aria-label ressemblant à un numéro de
   carte / CVC / OTP). La vraie valeur n'atteint jamais la liste de steps, le
   sessionStorage, le presse-papiers ni un export ; remplacez le placeholder
   par une variable Robot Framework dans la suite exportée. La détection est
@@ -291,13 +301,13 @@ DOM peut ne pas se rejouer sous SeleniumLibrary.
 
 ```
 node build.mjs                  # concatène src/ -> dist/recorder_snippet.js + extension/recorder.js
-node --test "test/*.test.mjs"   # tests unitaires (node:test, sans jsdom — cœur duck-typé)
+node --test "test/*.test.mjs"   # tests unitaires (node:test, sans jsdom, cœur duck-typé)
 node package_extension.mjs      # zippe extension/ -> dist/rf-web-recorder-extension-<version>.zip
 npm run test:e2e                # E2E optionnel : pilote le bundle CONSTRUIT dans un vrai Chromium
 ```
 
 La suite E2E (`test/e2e/recorder_live.robot`) est la seule partie du dépôt
-avec des dépendances — celles que vous avez déjà en tant qu'utilisateur des
+avec des dépendances : celles que vous avez déjà en tant qu'utilisateur des
 exports : `pip install robotframework robotframework-browser` +
 `rfbrowser init`. Elle injecte `dist/recorder_snippet.js` dans une page de
 checkout fixture et vérifie en live : masquage des champs sensibles (mot de
@@ -323,15 +333,15 @@ Arborescence :
 
 Les modules `core/` n'exigent jamais un vrai DOM : ils acceptent tout objet
 exposant `tagName` / `getAttribute()` / `textContent` / `parentElement` /
-`children`… C'est ce qui les rend testables avec de minuscules faux nœuds — le
+`children`… C'est ce qui les rend testables avec de minuscules faux nœuds : le
 vrai DOM se trouve simplement satisfaire la même interface à l'exécution.
 
 ## Non-objectifs assumés
 
 - **Pas d'enregistrement de contrôle de flux** (pas de if/else, boucles ou
   variables capturés depuis l'interface, contrairement à Selenium IDE) : la
-  logique appartient à Robot Framework — keywords resource, templates,
-  `IF`/`FOR` écrits là où on peut les relire et les maintenir — pas à un
+  logique appartient à Robot Framework : keywords resource, templates,
+  `IF`/`FOR` écrits là où on peut les relire et les maintenir, pas à un
   enregistrement. Un enregistrement est un brouillon linéaire ; le seul
   contrôle de flux que l'enregistreur émette est le patron de repli de
   localisateur ci-dessus, et il le génère, il ne l'enregistre pas.
@@ -339,7 +349,7 @@ vrai DOM se trouve simplement satisfaire la même interface à l'exécution.
 ## Limites connues
 
 - Un champ qui ré-émet un `change` natif au blur (après d'autres steps) est
-  enregistré une seconde fois — sans effet au rejeu, supprimez le step en trop
+  enregistré une seconde fois, sans effet au rejeu, supprimez le step en trop
   dans le panneau.
 - Entrée sur un bouton focalisé enregistre la touche ET le clic synthétisé par
   le navigateur.
@@ -347,11 +357,13 @@ vrai DOM se trouve simplement satisfaire la même interface à l'exécution.
   d'enregistrement sont conservés, mais il faut le ré-injecter (`Alt+Shift+U`
   ou re-coller le snippet) avant que les interactions suivantes soient
   capturées.
-- Les changements d'un `<input type="file">` ne sont pas enregistrés — un vrai
+- Les changements d'un `<input type="file">` ne sont pas enregistrés : un vrai
   upload demande un `Upload File By Selector` écrit à la main.
 - Les iframes cross-origin n'ont leur panneau qu'en mode extension (le snippet
   ne franchit pas les origines ; l'extension injecte en `allFrames` là où c'est
-  permis).
+  permis). Le panneau de la frame principale affiche désormais un bandeau
+  d'avertissement avec le nombre de ces frames au lieu de rater leurs steps en
+  silence.
 - L'unicité d'un localisateur est évaluée au moment de la capture, sur l'état
   courant du DOM (shadow roots ouverts compris).
 - L'unicité du chemin CSS ancré est vérifiée avec le moteur CSS de la page ;
@@ -361,4 +373,4 @@ vrai DOM se trouve simplement satisfaire la même interface à l'exécution.
 ## Licence
 
 Apache-2.0. Le cœur de localisation a été développé à l'origine pour le projet
-SAPFX, du même auteur — voir [NOTICE](NOTICE).
+SAPFX, du même auteur : voir [NOTICE](NOTICE).

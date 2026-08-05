@@ -1,5 +1,5 @@
 /*
- * rf-web-recorder — panel/panel.js
+ * rf-web-recorder: panel/panel.js
  *
  * Floating in-page UI: draggable/collapsible panel with rec/play/+test/export/
  * clear/stop buttons, an editable test name, the ordered step list (move
@@ -8,13 +8,13 @@
  * the export-format picker and the right-click assertion menu.
  *
  * Browser-only (touches the DOM). Ported from the author's SAPFX recorder
- * panel (Apache-2.0) and generalized — see NOTICE.
+ * panel (Apache-2.0) and generalized: see NOTICE.
  */
 (function (global) {
   "use strict";
   var CORE = global.__RFREC_CORE = global.__RFREC_CORE || {};
 
-  var ACCENT = "#4f46e5";   // indigo — panel identity color
+  var ACCENT = "#4f46e5";   // indigo: panel identity color
   var REC_RED = "#d0021b";
 
   // ---- hover highlight overlay ---------------------------------------------
@@ -46,7 +46,7 @@
       flash: function () {
         // Snapshot the resting background only when idle: two overlapping
         // flashes (fill + deferred press arrive in one tick) would otherwise
-        // snapshot the green and restore green — permanently.
+        // snapshot the green and restore green: permanently.
         if (flashTimer) clearTimeout(flashTimer);
         else flashOrig = box.style.background;
         box.style.background = "rgba(22,163,74,0.25)";
@@ -116,7 +116,7 @@
     var panel = doc.createElement("div");
     panel.id = "__rfrecPanel";
     // 470px: the header row carries 7 controls (collapse/rec/play/+test/export/
-    // clear/stop) — at 400px it wrapped onto two lines and pushed `stop` under
+    // clear/stop): at 400px it wrapped onto two lines and pushed `stop` under
     // the title (seen in the first recorded demo).
     panel.style.cssText = "position:fixed;z-index:2147483647;right:12px;bottom:12px;" +
       "width:470px;max-height:55vh;display:flex;flex-direction:column;background:#fff;" +
@@ -164,9 +164,16 @@
 
     var list = doc.createElement("div");
     list.style.cssText = "overflow:auto;padding:6px;";
+    // Cross-origin iframe warning strip (hidden by default): shown by
+    // setFrameWarn(n) in the TOP frame when the page embeds frames this
+    // bundle cannot reach. Ported from the SAPFX web recorder.
+    var frameWarn = doc.createElement("div");
+    frameWarn.style.cssText = "padding:4px 10px;color:#a15c00;background:#fff8ec;" +
+      "border-top:1px solid #f0e0c0;display:none;";
     var hint = doc.createElement("div");
     hint.style.cssText = "padding:6px 10px;color:#666;border-top:1px solid #eee;";
-    panel.appendChild(head); panel.appendChild(nameRow); panel.appendChild(list); panel.appendChild(hint);
+    panel.appendChild(head); panel.appendChild(nameRow); panel.appendChild(list);
+    panel.appendChild(frameWarn); panel.appendChild(hint);
     doc.documentElement.appendChild(panel);
 
     // +test inline prompt: a temporary one-line input above the step list;
@@ -228,7 +235,7 @@
     function onDragMove(e) {
       if (!drag) return;
       // mouseup outside the window never reaches us: a move with no button
-      // held means the drag already ended — stop following the cursor.
+      // held means the drag already ended: stop following the cursor.
       if (e.buttons === 0) { drag = null; return; }
       panel.style.left = (e.clientX - drag.dx) + "px";
       panel.style.top = (e.clientY - drag.dy) + "px";
@@ -312,14 +319,23 @@
         dot.style.animation = on ? "__rfrecBlink 1s infinite" : "none";
       },
       setHint: function (text) { hint.textContent = text; },
+      // n cross-origin iframes are invisible to this bundle's listeners: say
+      // so instead of silently missing their steps (0 hides the strip).
+      setFrameWarn: function (n) {
+        if (n > 0) {
+          frameWarn.textContent = "⚠ " + n + " cross-origin iframe(s) this panel cannot reach: " +
+            "the extension records inside them (one panel per frame); the console snippet cannot.";
+          frameWarn.style.display = "";
+        } else { frameWarn.style.display = "none"; }
+      },
       getTestName: function () { return nameInput.value; },
       setTestName: function (v) { nameInput.value = v; },
       // step rows: "N. <line>" + strategy chip + up/down/delete; scenario
-      // markers render as a distinct "— Test: name —" row with delete only.
+      // markers render as a distinct "· Test: name ·" row with delete only.
       // Double-click any row to edit it inline (value if the step carries
       // one, else key/name/locator).
       renderSteps: function (steps, lines, recording) {
-        title.textContent = (recording ? "Recording" : "Steps") + " — " +
+        title.textContent = (recording ? "Recording" : "Steps") + ", " +
           steps.length + " step(s)" + frameTag;
         list.textContent = "";
         rowEls = [];
@@ -330,12 +346,12 @@
           var txt = doc.createElement("span");
           txt.style.cssText = "flex:1;font:11px monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
           if (isMarker) {
-            txt.textContent = "— Test: " + (st.name || "?") + " —";
+            txt.textContent = "· Test: " + (st.name || "?") + " ·";
             txt.style.color = ACCENT; txt.style.fontWeight = "600";
             row.style.background = "#eef2ff";
           } else {
             txt.textContent = (i + 1) + ". " + lines[i];
-            txt.title = lines[i] + " — double-click to edit";
+            txt.title = lines[i] + ": double-click to edit";
           }
           row.__rfrecBg = row.style.background;
           var editable = ("value" in st) ? st.value
@@ -370,7 +386,7 @@
       },
       // capture rows: label + one copy button per candidate strategy
       renderCaptures: function (captures, copyFn) {
-        title.textContent = "RF Web Recorder — " + captures.length + " captured" + frameTag;
+        title.textContent = "RF Web Recorder: " + captures.length + " captured" + frameTag;
         list.textContent = "";
         captures.forEach(function (rec, i) {
           var row = doc.createElement("div");

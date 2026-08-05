@@ -9,3 +9,10 @@ the in-page capture/record panel and the recorder event wiring) was
 originally developed by the same author for the SAPFX project (a SAP
 test-automation ecosystem for Robot Framework, Apache-2.0) and was
 ported here, generalized and stripped of all SAP/UI5-specific behaviour.
+
+The HTML documentation-report export (one chapter per scenario, factual
+phrase next to the exact keyword line) follows the same concept chain:
+it re-implements, per step and without any code reuse, an idea observed
+in RoboSAPiens' saveHtmlReport (imbus AG, Apache-2.0), first ported to
+the SAPFX web recorder and then brought here. The cross-origin iframe
+warning strip is likewise ported from the SAPFX web recorder.

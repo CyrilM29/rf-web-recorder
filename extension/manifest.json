@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "RF Web Recorder",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Record clicks, inputs and assertions on any page as Robot Framework Browser-library keywords. Exports runnable .robot suites.",
   "minimum_chrome_version": "111",
   "permissions": [

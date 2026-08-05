@@ -1,5 +1,5 @@
 /*
- * rf-web-recorder v0.4.1 — universal Robot Framework Browser-library recorder.
+ * rf-web-recorder v0.5.0: universal Robot Framework Browser-library recorder.
  *
  * Hover to highlight + click to capture locators; « rec » records your
  * interactions as replayable Browser-library keywords; « play » replays the
@@ -12,14 +12,14 @@
  *   1. paste this whole file into the DevTools console, or
  *   2. load the browser extension in extension/ and click its icon.
  *
- * GENERATED FILE — do not edit. Sources live in src/; run `node build.mjs`.
+ * GENERATED FILE: do not edit. Sources live in src/; run `node build.mjs`.
  * License: Apache-2.0 (see LICENSE / NOTICE).
  */
 (() => {
 "use strict";
 // ---- src/core/locators.js ------------------------------------------------
 /*
- * rf-web-recorder — core/locators.js
+ * rf-web-recorder: core/locators.js
  *
  * Locator candidate generation and scoring for Playwright-style selectors as
  * consumed by the Robot Framework Browser library.
@@ -27,7 +27,7 @@
  * Pure logic, duck-typed: every function accepts plain objects that look like
  * DOM nodes (tagName, getAttribute(), textContent, parentElement,
  * previousElementSibling, children...). Real DOM elements satisfy the same
- * interface at runtime; unit tests pass minimal fake nodes — no jsdom needed.
+ * interface at runtime; unit tests pass minimal fake nodes, no jsdom needed.
  *
  * Candidate priority (first candidate that resolves UNIQUELY wins):
  *   1. explicit test ids  (data-testid / data-test-id / data-test / data-cy)
@@ -37,7 +37,7 @@
  *   5. short unique trimmed text             -> text="..."
  *   6. anchored CSS path (nearest stable-id ancestor + nth-of-type chain)
  *
- * Ported from the author's SAPFX project (Apache-2.0) and generalized — see NOTICE.
+ * Ported from the author's SAPFX project (Apache-2.0) and generalized: see NOTICE.
  */
 (function (global, factory) {
   "use strict";
@@ -179,7 +179,7 @@
   // Nearest stable-id ancestor as the anchor ([id="..."] is always a safe CSS
   // literal), then an nth-of-type chain down to the element. Crossing an OPEN
   // shadow root boundary hops to the host and joins with a descendant
-  // combinator — Playwright's CSS engine pierces open shadow roots, so the
+  // combinator: Playwright's CSS engine pierces open shadow roots, so the
   // plain selector keeps working for click/fill.
   function cssPath(el) {
     var parts = [];
@@ -300,7 +300,7 @@
   }
   function countMatches(cand, doc) {
     if (cand.strategy === "css-path") {
-      // nth-of-type chain from a unique anchor — verify with the CSS engine
+      // nth-of-type chain from a unique anchor: verify with the CSS engine
       // when one is available (a duplicated anchor id would break uniqueness);
       // a count of 0 means the element sits in a shadow tree plain CSS cannot
       // see but Playwright's piercing engine can: trust the construction.
@@ -318,7 +318,7 @@
   }
 
   // The first candidate that resolves uniquely on the page wins. Returns
-  // { selector, strategy, candidates } — the strategy is surfaced in the panel
+  // { selector, strategy, candidates }: the strategy is surfaced in the panel
   // so users can judge the robustness of every recorded step.
   function bestLocator(el, doc) {
     doc = docOf(el, doc);
@@ -347,7 +347,7 @@
 
 // ---- src/core/steps.js ---------------------------------------------------
 /*
- * rf-web-recorder — core/steps.js
+ * rf-web-recorder: core/steps.js
  *
  * Step model + compaction rules + sensitive-field masking. Pure logic,
  * unit-testable without a DOM.
@@ -360,11 +360,11 @@
  *        multiple test cases)
  *
  * Compaction rules (applied on append, and again by compact()):
- *   - consecutive identical steps are deduped — except two identical CLICKS
+ *   - consecutive identical steps are deduped: except two identical CLICKS
  *     whose timestamps (`t`, ms) are far enough apart: clicking a "+" stepper
  *     twice is intent, the dedup only guards against double-dispatched events;
  *   - consecutive `fill` steps on the same locator keep only the LAST value
- *     (typing emits many change events — only the final value matters);
+ *     (typing emits many change events: only the final value matters);
  *   - consecutive `wait-load` steps collapse to one;
  *   - `test` markers pass through untouched, and BREAK the adjacency the
  *     fill/wait rules rely on (a marker is a scenario boundary).
@@ -464,7 +464,7 @@
 
 // ---- src/core/emit_browser.js --------------------------------------------
 /*
- * rf-web-recorder — core/emit_browser.js
+ * rf-web-recorder: core/emit_browser.js
  *
  * Step -> Robot Framework Browser-library keyword emission. Pure logic.
  *
@@ -474,7 +474,7 @@
  *   buildResourcePair(opts)  -> { resource, suite, resourceName }:
  *       every distinct locator becomes a ${LOC_<N>_<SLUG>} variable + small
  *       action keywords in a .resource file; the .robot test calls only those
- *       keywords (locators never leak into the test — resource-first pattern).
+ *       keywords (locators never leak into the test: resource-first pattern).
  *       A step whose recorded CSS-path fallback differs from its winning
  *       locator additionally gets a ${LOC_<N>_<SLUG>_FALLBACK} variable and an
  *       IF/ELSE keyword body that falls back to the CSS path (with a WARN log)
@@ -482,11 +482,11 @@
  *
  * `test` marker steps ({ type: "test", name }) split every export shape into
  * multiple *** Test Cases *** entries; the session bootstrap (New Browser /
- * New Page) is emitted only in the FIRST test — later tests continue the same
+ * New Page) is emitted only in the FIRST test: later tests continue the same
  * browser session.
  *
  * parseSuite(text) is the inverse of buildSuite: it reads an exported .robot
- * back into { testName, url, steps, skipped } — unparseable lines land in
+ * back into { testName, url, steps, skipped }: unparseable lines land in
  * `skipped`, never silently dropped.
  */
 (function (global, factory) {
@@ -504,7 +504,7 @@
   // spaces (token separators), and leading '#' (comment) / leading-trailing
   // spaces (stripped) are protected. With `isValue`, a leading "word=" is also
   // escaped so a recorded value can never turn into a named argument (Browser
-  // keywords have parameters like force/txt — `force=True` as a literal value
+  // keywords have parameters like force/txt: `force=True` as a literal value
   // would otherwise be swallowed as `force=` and the call would lose it).
   function rfEscape(value, isValue) {
     if (value === undefined || value === null) return "${EMPTY}";
@@ -553,8 +553,8 @@
   }
 
   // rfEscape variant for resource-pair keyword bodies: our generated variable
-  // references (${LOC_...}, ${value}, ...) must stay live; anything else —
-  // i.e. every recorded value — escapes normally.
+  // references (${LOC_...}, ${value}, ...) must stay live; anything else:
+  // i.e. every recorded value: escapes normally.
   function refEscape(v, isValue) {
     var s = String(v === undefined || v === null ? "" : v);
     if (/^\$\{[A-Za-z_][A-Za-z0-9_]*\}$/.test(s)) return s;
@@ -858,7 +858,7 @@
   //     are recognized and dropped (New Page still yields `url`);
   //   - the first test-case name becomes testName, every further one becomes
   //     a { type: "test", name } marker;
-  //   - anything else unparseable lands in `skipped` — never silently dropped.
+  //   - anything else unparseable lands in `skipped`, never silently dropped.
   function parseSuite(text) {
     var lines = String(text || "").split(/\r?\n/);
     var section = "";
@@ -880,7 +880,7 @@
       }
       var body = line.replace(/^\s+/, "");
       if (body.charAt(0) === "#") continue;          // comments carry no step
-      // Trailing whitespace (editor artifacts) is not data — unless the last
+      // Trailing whitespace (editor artifacts) is not data: unless the last
       // space is escaped (odd backslash run before it: `\ ` survives).
       var tail = /^(.*?)([ \t]+)$/.exec(body);
       if (tail) {
@@ -927,13 +927,13 @@
 
 // ---- src/core/emit_selenium.js -------------------------------------------
 /*
- * rf-web-recorder — core/emit_selenium.js
+ * rf-web-recorder: core/emit_selenium.js
  *
  * Step -> Robot Framework SeleniumLibrary keyword emission. Pure logic.
  * Second emission adapter next to emit_browser.js (same step model, same
  * export shapes) for teams still on SeleniumLibrary.
  *
- * Locator translation — SeleniumLibrary has no Playwright engines:
+ * Locator translation, SeleniumLibrary has no Playwright engines:
  *   - `role=…[name=…]` and `text=…` selectors CANNOT be expressed; each
  *     recorded step carries a `css` fallback (the anchored CSS path computed
  *     at capture time) which is used instead, as `css:<path>`;
@@ -941,9 +941,9 @@
  *   - everything else (test-id / placeholder attribute selectors, CSS paths)
  *     is plain CSS       -> `css:<selector>`
  * A step whose locator needs the CSS fallback but has none recorded (e.g.
- * steps restored from a pre-0.2 session) is kept as a comment — the
+ * steps restored from a pre-0.2 session) is kept as a comment: the
  * information is never silently dropped.
- * Limit: Playwright CSS pierces open shadow roots, Selenium CSS does not —
+ * Limit: Playwright CSS pierces open shadow roots, Selenium CSS does not,
  * steps recorded inside shadow DOM may not replay under Selenium.
  */
 (function (global, factory) {
@@ -976,7 +976,7 @@
   }
 
   // Selenium key names are UPPER_SNAKE: camel-case DOM keys split on the case
-  // boundary (ArrowDown -> ARROW_DOWN) — a bare toUpperCase() would emit the
+  // boundary (ArrowDown -> ARROW_DOWN): a bare toUpperCase() would emit the
   // invalid ARROWDOWN for any key set through the panel's step editor.
   function seleniumKeyName(key) {
     return KEY_NAMES[key] ||
@@ -984,7 +984,7 @@
   }
 
   // One step -> one SeleniumLibrary keyword line (or a comment, never a loss).
-  // `esc` (default rfEscape) — see emit_browser.emitStep.
+  // `esc` (default rfEscape): see emit_browser.emitStep.
   function emitStep(step, esc) {
     var E = esc || rfEscape;
     if (!step) return [];
@@ -1034,7 +1034,7 @@
 
   // Full runnable .robot suite (SeleniumLibrary session bootstrap). `test`
   // markers split it into several test cases; Open Browser runs only in the
-  // first one — later tests continue the same session.
+  // first one: later tests continue the same session.
   function buildSuite(opts) {
     opts = opts || {};
     var lines = [];
@@ -1071,7 +1071,7 @@
     var resourceName = opts.resourceName || "recorded_keywords.resource";
 
     // 1. distinct TRANSLATED locators -> ${LOC_<N>_<SLUG>} variables
-    // Object.create(null): see emit_browser — a locator spelled like an
+    // Object.create(null): see emit_browser, a locator spelled like an
     // Object.prototype member must not hit an inherited property.
     var varByLocator = Object.create(null);
     var varOrder = [];
@@ -1177,9 +1177,194 @@
   };
 });
 
+// ---- src/core/emit_report.js ---------------------------------------------
+/*
+ * rf-web-recorder: core/emit_report.js
+ *
+ * Step -> human documentation. Pure logic, unit-testable without a DOM.
+ * Concept ported back from the SAPFX web recorder (its 0.8.0 "HTML
+ * documentation report" + "spec plan" exports, themselves inspired by
+ * RoboSAPiens' saveHtmlReport: see the SAPFX project's NOTICE chain).
+ *
+ * Two export shapes, both documentation and never a test (the raw recording
+ * stays authoritative):
+ *   buildReport(opts, emitter) -> self-contained HTML page: one chapter per
+ *       scenario, one <li> per step with the factual English phrase AND the
+ *       exact Robot Framework line alongside (the report never invents);
+ *       inline minimal CSS, no JS, no external resource.
+ *   buildPlan(opts)            -> Markdown test-plan draft: one section per
+ *       scenario, numbered business-readable steps, expected results left to
+ *       the reviewer, plus a "Recorded locators" appendix (locators stay out
+ *       of the phrasing when the target has an accessible name).
+ *
+ * humanizeStep(step) is the shared phrase builder: it uses the accessible
+ * name captured at record time when there is one, the raw locator (marked as
+ * code) otherwise, and it says so when a value was masked at capture.
+ */
+(function (global, factory) {
+  "use strict";
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = factory(require("./emit_browser.js"));
+  } else {
+    var core = global.__RFREC_CORE = global.__RFREC_CORE || {};
+    core.report = factory(core.emit);
+  }
+})(typeof globalThis !== "undefined" ? globalThis : this, function (base) {
+  "use strict";
+
+  var MASKED_RE = /^<(PASSWORD|SECRET)>$/;
+
+  // The step's human-facing label: the accessible name captured at record
+  // time when there is one, otherwise the locator itself (flagged as code so
+  // renderers can style it and the plan can route it to the appendix).
+  function stepLabel(step) {
+    var name = step && step.name ? String(step.name).trim() : "";
+    if (name) return { text: name, code: false };
+    var loc = step && step.locator ? String(step.locator) : "";
+    if (loc) return { text: loc, code: true };
+    return { text: "the element", code: false };
+  }
+
+  function maskedNote(value) {
+    return MASKED_RE.test(String(value === undefined || value === null ? "" : value))
+      ? " (value masked at capture)" : "";
+  }
+
+  // One step -> { phrase parts } or null when the step has no translation
+  // (unknown type): callers then fall back to the raw keyword line.
+  // The phrase is returned in parts so each renderer can quote/escape its own
+  // way: [{ text }, { text, code: true }, ...].
+  function humanizeStep(step) {
+    if (!step || !step.type || step.type === "test") return null;
+    var label = stepLabel(step);
+    var q = function (v) { return { text: '"' + String(v === undefined || v === null ? "" : v) + '"' }; };
+    var t = function (text) { return { text: text }; };
+    switch (step.type) {
+      case "click": return [t("Click "), label, t(".")];
+      case "fill": return [t("Fill "), label, t(" with "), q(step.value),
+                           t(maskedNote(step.value) + ".")];
+      case "select": return [t("Select "), q(step.value), t(" in "), label, t(".")];
+      case "check": return [t("Check "), label, t(".")];
+      case "uncheck": return [t("Uncheck "), label, t(".")];
+      case "press": return [t("Press the "), t(String(step.key || "")), t(" key.")];
+      case "wait-load": return [t("Wait for the page to finish loading.")];
+      case "assert-visible": return [t("Verify that "), label, t(" is visible.")];
+      case "assert-text": return [t("Verify that "), label, t(" shows "), q(step.value), t(".")];
+      case "assert-value": return [t("Verify that "), label, t(" contains the value "),
+                                   q(step.value), t(maskedNote(step.value) + ".")];
+      case "assert-count": return [t("Verify that "), label, t(" appears "),
+                                   t(String(step.value === undefined ? "" : step.value)),
+                                   t(" time(s).")];
+      case "capture": return [t("Locate "), label, t(" (captured locator).")];
+      default: return null;
+    }
+  }
+
+  function escapeHtml(t) {
+    return String(t).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  function phraseHtml(parts) {
+    return parts.map(function (p) {
+      return p.code ? "<code>" + escapeHtml(p.text) + "</code>" : escapeHtml(p.text);
+    }).join("");
+  }
+  // Markdown rendering: code parts in CommonMark code spans (a literal `*LH*`
+  // must not render as emphasis: same lesson as the SAPFX spec export).
+  function mdCode(t) {
+    var s = String(t);
+    var ticks = "`";
+    while (s.indexOf(ticks) !== -1) ticks += "`";
+    return ticks + s + ticks;
+  }
+  function phraseMd(parts) {
+    return parts.map(function (p) { return p.code ? mdCode(p.text) : p.text; }).join("");
+  }
+
+  function planNameOf(opts) {
+    return (opts && opts.testName ? String(opts.testName) : "").trim() || "Recorded Scenario";
+  }
+
+  // ---- HTML documentation report -------------------------------------------
+  function buildReport(opts, emitter) {
+    opts = opts || {};
+    var em = emitter || base;
+    var name = planNameOf(opts);
+    var css = "body{font-family:system-ui,sans-serif;margin:2em auto;max-width:62em;" +
+      "padding:0 1em;color:#24292f}h1{font-size:1.5em;border-bottom:2px solid #444;" +
+      "padding-bottom:.3em}h2{font-size:1.15em;margin-top:1.4em}p.meta{color:#57606a;" +
+      "font-size:.9em}ol.steps{padding-left:1.6em}ol.steps>li{margin:.9em 0}" +
+      "p.human{margin:0 0 .15em}p.raw{margin:0}code{background:#f6f8fa;" +
+      "border:1px solid #d0d7de;border-radius:3px;padding:1px 5px;font-size:.85em;" +
+      "color:#3b4854}";
+    var page = "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n" +
+      "<title>" + escapeHtml(name) + "</title>\n<style>" + css + "</style>\n" +
+      "</head>\n<body>\n<h1>" + escapeHtml(name) + "</h1>\n" +
+      "<p class=\"meta\">Report generated by rf-web-recorder from " +
+      escapeHtml(String(opts.url || "about:blank")) + ". Documentation of the " +
+      "recorded flow: the raw recording stays authoritative, this report is " +
+      "not a test.</p>\n";
+    base.splitScenarios(opts.steps).forEach(function (group, gi) {
+      page += "<h2>" + (gi + 1) + ". " +
+        escapeHtml(base.scenarioName(group, gi, name)) + "</h2>\n<ol class=\"steps\">\n";
+      group.items.forEach(function (step) {
+        var parts = humanizeStep(step);
+        var raw = em.emitStep(step).map(escapeHtml).join("<br>");
+        page += "<li>" +
+          (parts ? "<p class=\"human\">" + phraseHtml(parts) + "</p>" : "") +
+          "<p class=\"raw\"><code>" + raw + "</code></p></li>\n";
+      });
+      page += "</ol>\n";
+    });
+    page += "</body>\n</html>\n";
+    return page;
+  }
+
+  // ---- Markdown test-plan draft --------------------------------------------
+  function buildPlan(opts) {
+    opts = opts || {};
+    var name = planNameOf(opts);
+    var groups = base.splitScenarios(opts.steps);
+    var locators = [];   // [{ locator, where }]: appendix rows, in order of first use
+    var seen = {};
+    var md = "# Test plan: " + name + "\n\n";
+    md += "Draft generated by rf-web-recorder from " + mdCode(String(opts.url || "about:blank")) +
+      ".\nBusiness-readable draft of the recorded flow: review the wording, add the " +
+      "expected\nresults, then hand it to whoever writes the final suite. Raw locators " +
+      "live in the\nappendix.\n\n";
+    groups.forEach(function (group, gi) {
+      md += "## Scenario " + (gi + 1) + ": " + base.scenarioName(group, gi, name) + "\n\n";
+      var n = 0;
+      group.items.forEach(function (step, si) {
+        var parts = humanizeStep(step);
+        if (!parts) return;   // unknown step types carry no phrase: nothing invented
+        n++;
+        md += n + ". " + phraseMd(parts) + "\n";
+        if (step.locator && !seen[step.locator]) {
+          seen[step.locator] = true;
+          locators.push({ locator: step.locator,
+                          where: "scenario " + (gi + 1) + ", step " + (si + 1) });
+        }
+      });
+      if (!n) md += "*(no translatable step recorded)*\n";
+      md += "\n- **Expected result**: to complete by the reviewer.\n\n";
+    });
+    md += "## Recorded locators\n\n";
+    md += locators.length
+      ? locators.map(function (l) { return "- " + mdCode(l.locator) + " (" + l.where + ")"; }).join("\n") + "\n"
+      : "*(none)*\n";
+    return md;
+  }
+
+  return { humanizeStep: humanizeStep, buildReport: buildReport, buildPlan: buildPlan,
+           escapeHtml: escapeHtml, mdCode: mdCode };
+});
+
 // ---- src/core/resolve.js -------------------------------------------------
 /*
- * rf-web-recorder — core/resolve.js
+ * rf-web-recorder: core/resolve.js
  *
  * The INVERSE of locator generation: resolve a recorded selector back to the
  * matching element(s) so recorded steps can be REPLAYED in place, plus the
@@ -1194,7 +1379,7 @@
  *
  * Pure logic, duck-typed like the rest of core: works against any object
  * shaped like a document/element. Fake docs without querySelector fall back
- * to a children walk for every scannable form — only raw CSS paths genuinely
+ * to a children walk for every scannable form: only raw CSS paths genuinely
  * need a CSS engine.
  */
 (function (global, factory) {
@@ -1212,7 +1397,7 @@
 
   // ---- duck-typed document scan (mirror of locators.js allElements) --------
   // Pierces open shadow roots like the Playwright engines the recorded
-  // locators target — replay must resolve what the export will resolve.
+  // locators target: replay must resolve what the export will resolve.
   function allElements(doc) {
     if (doc && typeof doc.querySelectorAll === "function") {
       try {
@@ -1338,7 +1523,7 @@
   }
 
   // ---- assertion evaluation (pure given a doc) -----------------------------
-  // Returns { ok, reason?, element? } — the element travels back so the
+  // Returns { ok, reason?, element? }: the element travels back so the
   // replayer can highlight what it checked.
   function evalAssertion(step, doc) {
     var loc = step && step.locator;
@@ -1403,7 +1588,7 @@
 
 // ---- src/panel/panel.js --------------------------------------------------
 /*
- * rf-web-recorder — panel/panel.js
+ * rf-web-recorder: panel/panel.js
  *
  * Floating in-page UI: draggable/collapsible panel with rec/play/+test/export/
  * clear/stop buttons, an editable test name, the ordered step list (move
@@ -1412,13 +1597,13 @@
  * the export-format picker and the right-click assertion menu.
  *
  * Browser-only (touches the DOM). Ported from the author's SAPFX recorder
- * panel (Apache-2.0) and generalized — see NOTICE.
+ * panel (Apache-2.0) and generalized: see NOTICE.
  */
 (function (global) {
   "use strict";
   var CORE = global.__RFREC_CORE = global.__RFREC_CORE || {};
 
-  var ACCENT = "#4f46e5";   // indigo — panel identity color
+  var ACCENT = "#4f46e5";   // indigo: panel identity color
   var REC_RED = "#d0021b";
 
   // ---- hover highlight overlay ---------------------------------------------
@@ -1450,7 +1635,7 @@
       flash: function () {
         // Snapshot the resting background only when idle: two overlapping
         // flashes (fill + deferred press arrive in one tick) would otherwise
-        // snapshot the green and restore green — permanently.
+        // snapshot the green and restore green: permanently.
         if (flashTimer) clearTimeout(flashTimer);
         else flashOrig = box.style.background;
         box.style.background = "rgba(22,163,74,0.25)";
@@ -1520,7 +1705,7 @@
     var panel = doc.createElement("div");
     panel.id = "__rfrecPanel";
     // 470px: the header row carries 7 controls (collapse/rec/play/+test/export/
-    // clear/stop) — at 400px it wrapped onto two lines and pushed `stop` under
+    // clear/stop): at 400px it wrapped onto two lines and pushed `stop` under
     // the title (seen in the first recorded demo).
     panel.style.cssText = "position:fixed;z-index:2147483647;right:12px;bottom:12px;" +
       "width:470px;max-height:55vh;display:flex;flex-direction:column;background:#fff;" +
@@ -1568,9 +1753,16 @@
 
     var list = doc.createElement("div");
     list.style.cssText = "overflow:auto;padding:6px;";
+    // Cross-origin iframe warning strip (hidden by default): shown by
+    // setFrameWarn(n) in the TOP frame when the page embeds frames this
+    // bundle cannot reach. Ported from the SAPFX web recorder.
+    var frameWarn = doc.createElement("div");
+    frameWarn.style.cssText = "padding:4px 10px;color:#a15c00;background:#fff8ec;" +
+      "border-top:1px solid #f0e0c0;display:none;";
     var hint = doc.createElement("div");
     hint.style.cssText = "padding:6px 10px;color:#666;border-top:1px solid #eee;";
-    panel.appendChild(head); panel.appendChild(nameRow); panel.appendChild(list); panel.appendChild(hint);
+    panel.appendChild(head); panel.appendChild(nameRow); panel.appendChild(list);
+    panel.appendChild(frameWarn); panel.appendChild(hint);
     doc.documentElement.appendChild(panel);
 
     // +test inline prompt: a temporary one-line input above the step list;
@@ -1632,7 +1824,7 @@
     function onDragMove(e) {
       if (!drag) return;
       // mouseup outside the window never reaches us: a move with no button
-      // held means the drag already ended — stop following the cursor.
+      // held means the drag already ended: stop following the cursor.
       if (e.buttons === 0) { drag = null; return; }
       panel.style.left = (e.clientX - drag.dx) + "px";
       panel.style.top = (e.clientY - drag.dy) + "px";
@@ -1716,14 +1908,23 @@
         dot.style.animation = on ? "__rfrecBlink 1s infinite" : "none";
       },
       setHint: function (text) { hint.textContent = text; },
+      // n cross-origin iframes are invisible to this bundle's listeners: say
+      // so instead of silently missing their steps (0 hides the strip).
+      setFrameWarn: function (n) {
+        if (n > 0) {
+          frameWarn.textContent = "⚠ " + n + " cross-origin iframe(s) this panel cannot reach: " +
+            "the extension records inside them (one panel per frame); the console snippet cannot.";
+          frameWarn.style.display = "";
+        } else { frameWarn.style.display = "none"; }
+      },
       getTestName: function () { return nameInput.value; },
       setTestName: function (v) { nameInput.value = v; },
       // step rows: "N. <line>" + strategy chip + up/down/delete; scenario
-      // markers render as a distinct "— Test: name —" row with delete only.
+      // markers render as a distinct "· Test: name ·" row with delete only.
       // Double-click any row to edit it inline (value if the step carries
       // one, else key/name/locator).
       renderSteps: function (steps, lines, recording) {
-        title.textContent = (recording ? "Recording" : "Steps") + " — " +
+        title.textContent = (recording ? "Recording" : "Steps") + ", " +
           steps.length + " step(s)" + frameTag;
         list.textContent = "";
         rowEls = [];
@@ -1734,12 +1935,12 @@
           var txt = doc.createElement("span");
           txt.style.cssText = "flex:1;font:11px monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
           if (isMarker) {
-            txt.textContent = "— Test: " + (st.name || "?") + " —";
+            txt.textContent = "· Test: " + (st.name || "?") + " ·";
             txt.style.color = ACCENT; txt.style.fontWeight = "600";
             row.style.background = "#eef2ff";
           } else {
             txt.textContent = (i + 1) + ". " + lines[i];
-            txt.title = lines[i] + " — double-click to edit";
+            txt.title = lines[i] + ": double-click to edit";
           }
           row.__rfrecBg = row.style.background;
           var editable = ("value" in st) ? st.value
@@ -1774,7 +1975,7 @@
       },
       // capture rows: label + one copy button per candidate strategy
       renderCaptures: function (captures, copyFn) {
-        title.textContent = "RF Web Recorder — " + captures.length + " captured" + frameTag;
+        title.textContent = "RF Web Recorder: " + captures.length + " captured" + frameTag;
         list.textContent = "";
         captures.forEach(function (rec, i) {
           var row = doc.createElement("div");
@@ -1814,7 +2015,7 @@
 
 // ---- src/recorder.js -----------------------------------------------------
 /*
- * rf-web-recorder — recorder.js
+ * rf-web-recorder: recorder.js
  *
  * Event wiring: capture + record modes, in-panel replay, hover highlight,
  * right-click assertion menu, sessionStorage persistence, export + .robot
@@ -1828,11 +2029,11 @@
  * Browser-library steps; Enter/Tab become Keyboard Key presses; hash/history
  * navigation becomes Wait For Load State. Right-click opens the assertion
  * menu (visible / text / value / count). Passwords and other sensitive
- * fields (payment, OTP — see steps.sensitiveMask) are never captured in
+ * fields (payment, OTP: see steps.sensitiveMask) are never captured in
  * clear text (value replaced by <PASSWORD> / <SECRET>).
  *
  * Ported from the author's SAPFX recorder listener (Apache-2.0) and
- * generalized — see NOTICE.
+ * generalized: see NOTICE.
  */
 (function (global) {
   "use strict";
@@ -1851,7 +2052,8 @@
 
   function createRecorder() {
     var locators = CORE.locators, stepsCore = CORE.steps, emit = CORE.emit,
-        emitSelenium = CORE.emitSelenium, resolveCore = CORE.resolve, ui = CORE.panel;
+        emitSelenium = CORE.emitSelenium, emitReport = CORE.report,
+        resolveCore = CORE.resolve, ui = CORE.panel;
     var doc = global.document;
 
     var running = false;
@@ -1865,13 +2067,13 @@
     // ---- persistence (survives page reloads within the tab) ----------------
     // sessionStorage writes can fail legitimately (private mode, quota,
     // storage disabled): recording still works, it just won't survive a
-    // reload — warn once instead of failing silently.
+    // reload: warn once instead of failing silently.
     var persistWarned = false;
     function persistWarn(e) {
       if (persistWarned) return;
       persistWarned = true;
       try {
-        console.warn("[rf-web-recorder] sessionStorage write failed — " +
+        console.warn("[rf-web-recorder] sessionStorage write failed: " +
           "steps will not survive a reload:", e);
       } catch (e2) { /* ignore */ }
     }
@@ -1918,7 +2120,7 @@
       }
       // Legacy path for contexts without a usable async clipboard (non-secure
       // origins have no navigator.clipboard; writeText can also reject on an
-      // unfocused document). The flash reports execCommand's actual result —
+      // unfocused document). The flash reports execCommand's actual result:
       // the button must not claim "copied" when nothing was.
       function legacyCopy() {
         var ok = false;
@@ -1955,7 +2157,7 @@
     }
     // Dependency-free file download via a Blob anchor click. A failure
     // (Blob/createObjectURL blocked by a strict CSP or sandbox) must not
-    // break the page — it is surfaced in the hint line instead.
+    // break the page: it is surfaced in the hint line instead.
     function download(text, filename) {
       try {
         var blob = new Blob([text], { type: "text/plain;charset=utf-8" });
@@ -2032,7 +2234,7 @@
 
     // ---- click: capture (inspect) or record (step) -------------------------
     // The floating menu closes itself on MOUSEDOWN (panel.js onAway); by the
-    // time the paired click event reaches us, isOpen() is already false — so
+    // time the paired click event reaches us, isOpen() is already false: so
     // the dismissal is remembered here and the click that follows is swallowed
     // instead of being recorded/captured as a spurious step.
     var menuDismissedAt = 0;
@@ -2058,7 +2260,7 @@
         addStep(stepFields("click", best, { t: Date.now() }));  // t: dedup window for deliberate repeats
         return;                                       // never block the app while recording
       }
-      // capture mode: inspection only — swallow the click
+      // capture mode: inspection only, swallow the click
       event.preventDefault(); event.stopPropagation();
       var cap = bestFor(target);
       captures.push({ selector: cap.selector, strategy: cap.strategy,
@@ -2096,7 +2298,7 @@
         return;
       }
       // File inputs have no replayable value (C:\fakepath\...) and assigning
-      // one at replay time throws — a real upload needs Upload File By
+      // one at replay time throws: a real upload needs Upload File By
       // Selector written by hand, so nothing useful can be recorded here.
       if (tag === "input" && type === "file") return;
       if ((tag === "input" || tag === "textarea") && "value" in t) {
@@ -2125,7 +2327,7 @@
       if (event.key === "Enter" || event.key === "Tab") {
         // Deferred one tick ON PURPOSE: a field's `change` fires on blur, i.e.
         // AFTER this keydown (Tab moves focus away, Enter submits). Recording
-        // the key immediately put it BEFORE the fill it actually followed —
+        // the key immediately put it BEFORE the fill it actually followed:
         // replaying that pressed Enter on an empty field, then filled it.
         // Caught by the first visible-browser demo run.
         // Kept in `pendingPress` so onBeforeUnload can flush it if Enter
@@ -2208,7 +2410,7 @@
     }
     // Assign through the NATIVE prototype setter: React's controlled inputs
     // track the last value set via the native accessor and dedupe `input`
-    // events whose value "didn't change" — a plain el.value = x is exactly
+    // events whose value "didn't change": a plain el.value = x is exactly
     // what gets deduped, so fills silently no-oped on React apps.
     function setNativeValue(el, value) {
       var proto = null;
@@ -2254,7 +2456,7 @@
       highlightElement(el, stepLine(st));
       switch (plan.action) {
         case "click":
-          // focus between down and up, like a native click — so a recorded
+          // focus between down and up, like a native click: so a recorded
           // press that follows lands on this element, not on <body>
           synthMouse(el, "mousedown");
           tryFocus(el);
@@ -2334,7 +2536,7 @@
     function exportAs(format) {
       var opts = { testName: testName(), url: startUrl(), steps: steps };
       // Emission adapter: Browser library by default, SeleniumLibrary on demand
-      // (locator translation lives in emit_selenium.js — same export shapes).
+      // (locator translation lives in emit_selenium.js: same export shapes).
       var target = (format.indexOf("selenium-") === 0) ? emitSelenium : emit;
       format = format.replace(/^selenium-/, "");
       if (format === "resource-pair") {
@@ -2342,12 +2544,22 @@
         download(pair.resource, pair.resourceName);
         // Chrome's multiple-download protection targets same-task downloads:
         // spacing the second one out gives the user a visible prompt instead
-        // of a silently missing .robot — and the hint says to expect 2 files.
+        // of a silently missing .robot, and the hint says to expect 2 files.
         setTimeout(function () { download(pair.suite, fileSlug() + ".robot"); }, 350);
         copy(pair.suite);
         if (panel) {
-          panel.setHint("Exporting 2 files (.resource + .robot) — allow multiple downloads if the browser asks.");
+          panel.setHint("Exporting 2 files (.resource + .robot): allow multiple downloads if the browser asks.");
         }
+      } else if (format === "report") {
+        // Self-contained HTML documentation page (phrase + exact RF line per
+        // step, one chapter per scenario): documentation, never a test.
+        var page = emitReport.buildReport(opts, target);
+        download(page, fileSlug() + "-report.html");
+        copy(page);
+      } else if (format === "plan") {
+        var plan = emitReport.buildPlan(opts);
+        download(plan, fileSlug() + "-plan.md");
+        copy(plan);
       } else if (format === "body") {
         copy(target.emitBody(steps));
       } else {
@@ -2362,6 +2574,8 @@
         { label: "Download .resource + .robot pair (Browser)", onPick: function () { exportAs("resource-pair"); } },
         { label: "Download .robot suite (SeleniumLibrary)", onPick: function () { exportAs("selenium-robot"); } },
         { label: "Download .resource + .robot pair (SeleniumLibrary)", onPick: function () { exportAs("selenium-resource-pair"); } },
+        { label: "Download HTML report (documentation)", onPick: function () { exportAs("report"); } },
+        { label: "Download Markdown test plan (draft)", onPick: function () { exportAs("plan"); } },
         { label: "Copy step body to clipboard", onPick: function () { exportAs("body"); } },
         { label: "Import .robot…", onPick: importRobot },
       ]);
@@ -2370,7 +2584,7 @@
     // ---- .robot re-import --------------------------------------------------
     // Reads an exported Browser-library suite back into the step list
     // (REPLACES the current steps). Unparseable lines are counted in the
-    // hint — parseSuite surfaces them, it never drops them silently.
+    // hint: parseSuite surfaces them, it never drops them silently.
     function importRobot() {
       var input = doc.createElement("input");
       input.type = "file";
@@ -2395,7 +2609,7 @@
           renderPanel();
           if (panel) {
             panel.setHint("Imported " + steps.length + " step(s) from " + file.name +
-              (parsed.skipped.length ? " — skipped " + parsed.skipped.length + " unparseable line(s)" : "") + ".");
+              (parsed.skipped.length ? ", skipped " + parsed.skipped.length + " unparseable line(s)" : "") + ".");
           }
         };
         reader.readAsText(file);
@@ -2442,6 +2656,19 @@
       notifyState();
     }
 
+    // Counts iframes whose document this frame cannot touch (cross-origin or
+    // sandboxed): each one is a recording blind spot for this bundle instance.
+    function crossOriginFrameCount() {
+      var n = 0;
+      try {
+        var frames = doc.querySelectorAll("iframe");
+        for (var i = 0; i < frames.length; i++) {
+          try { if (!frames[i].contentDocument) n++; } catch (e) { n++; }
+        }
+      } catch (e) { /* ignore */ }
+      return n;
+    }
+
     // ---- lifecycle ---------------------------------------------------------
     function start() {
       if (running) return;
@@ -2474,6 +2701,11 @@
       });
       panel.setTestName(loadName());
       panel.setHint(HINT_CAPTURE);
+      // Cross-origin iframes are invisible to this bundle's listeners (the
+      // console snippet only sees its own frame; the extension injects
+      // allFrames, one panel per frame): warn in the TOP frame instead of
+      // silently missing their steps. Ported from the SAPFX web recorder.
+      if (global.top === global.self) panel.setFrameWarn(crossOriginFrameCount());
       renderPanel();
       doc.addEventListener("mousemove", onMove, true);
       doc.addEventListener("mousedown", onMouseDown, true);
@@ -2509,7 +2741,7 @@
       if (panel) panel.destroy();
       panel = overlay = menu = null;
       notifyState();
-      console.info("[rf-web-recorder] stopped (steps kept — start again to resume).");
+      console.info("[rf-web-recorder] stopped (steps kept: start again to resume).");
     }
 
     return {
@@ -2530,10 +2762,10 @@
 
 // ---- src/main.js ---------------------------------------------------------
 /*
- * rf-web-recorder — main.js
+ * rf-web-recorder: main.js
  *
  * Entry point: bootstraps the public `window.__RFREC` API and auto-starts
- * capture mode on injection. Idempotent — the bundle wrapper re-calls
+ * capture mode on injection. Idempotent: the bundle wrapper re-calls
  * `__RFREC.start()` instead of re-installing when pasted twice.
  */
 (function (global) {
