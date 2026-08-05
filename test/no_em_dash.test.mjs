@@ -29,8 +29,8 @@ test("findOccurrences donne la ligne et un extrait", () => {
 });
 
 test("findOccurrences compte deux cadratins sur une même ligne", () => {
-  // L'incise « — x — » en porte deux : les compter séparément, sinon une
-  // incise fermée passerait pour une seule violation.
+  // Une incise fermée en porte deux (un cadratin de chaque côté) : les
+  // compter séparément, sinon elle passerait pour une seule violation.
   assert.equal(findOccurrences("a — b — c").length, 2);
 });
 
