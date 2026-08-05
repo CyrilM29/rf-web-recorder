@@ -192,7 +192,7 @@ supprimé que pendant le mode record.
 
 ## Formats d'export
 
-Le bouton `export` du panneau propose cinq formats (le bouton **Export** du
+Le bouton `export` du panneau propose huit formats (le bouton **Export** du
 popup utilise le premier) :
 
 1. **Suite `.robot` complète (Browser)** : `Library    Browser`, un test nommé
@@ -242,7 +242,20 @@ popup utilise le premier) :
    prêt à relire : une section par scénario, des étapes numérotées lisibles
    métier, les résultats attendus laissés au relecteur, et une annexe
    « Recorded locators » pour que les localisateurs restent hors des étapes.
-7. **Corps de steps brut** : presse-papiers uniquement (keywords Browser), pour
+7. **Plan de test ISTQB (.istqb.md)** : UN document Markdown couvrant les deux
+   niveaux ISTQB (ISTQB / ISO 29119-3) : sections plan de test (objectif et
+   périmètre, préconditions et données observées, critères d'entrée/sortie,
+   traçabilité, risques) plus un cas de test par scénario avec tableau
+   Action / Data / Expected result et bloc `replay` YAML normalisé (actions
+   neutres vis-à-vis du framework : `click`/`fill`/`press_key`/`assert_text`…,
+   le nom accessible comme cible humaine, le localisateur enregistré relégué
+   en `hint` dont le moteur est la stratégie de localisation). Lisible par un
+   humain ET rejouable par une IA avec n'importe quel framework de test ; les
+   rubriques de jugement restent « to complete » (le recorder n'invente
+   rien), les assertions posées en page portent de vrais attendus, les
+   valeurs masquées n'atteignent jamais le document (`fill_secret`). Même
+   gabarit que les recorders SAPFX (rapporté, 2026-08-05).
+8. **Corps de steps brut** : presse-papiers uniquement (keywords Browser), pour
    coller dans un test existant.
 
 Le même menu propose aussi **Import .robot…** : choisissez une suite

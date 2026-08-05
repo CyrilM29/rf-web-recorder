@@ -181,7 +181,7 @@ suppressed while record mode is on.
 
 ## Export formats
 
-The panel's `export` button offers five formats (the popup's **Export** uses
+The panel's `export` button offers eight formats (the popup's **Export** uses
 the first):
 
 1. **Full `.robot` suite (Browser)**: `Library    Browser`, one test case named
@@ -230,7 +230,19 @@ the first):
    one section per scenario, numbered business-readable steps, expected
    results left to the reviewer, and a "Recorded locators" appendix so
    locators stay out of the steps.
-7. **Plain step body**: clipboard only (Browser keywords), for pasting into an
+7. **ISTQB test plan (.istqb.md)**: one Markdown document covering both ISTQB
+   levels (ISTQB / ISO 29119-3): test-plan sections (objective and scope,
+   preconditions and observed data, entry/exit criteria, traceability, risks)
+   plus one test case per scenario with an Action / Data / Expected result
+   table and a normalized `replay` YAML block (framework-neutral actions such
+   as `click`/`fill`/`press_key`/`assert_text`, the accessible name as the
+   human target, the recorded locator relegated to a `hint` whose engine is
+   the locator strategy). Human-readable AND replayable by an AI with any
+   test framework; judgment fields stay "to complete" (the recorder invents
+   nothing), in-page assertions carry real expected values, masked values
+   never reach the document (`fill_secret`). Same template as the SAPFX
+   recorders (ported back, 2026-08-05).
+8. **Plain step body**: clipboard only (Browser keywords), for pasting into an
    existing test.
 
 The same menu also offers **Import .robot…**: pick a previously exported

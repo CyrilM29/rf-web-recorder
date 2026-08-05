@@ -22,6 +22,7 @@ const ORDER = [
   "src/core/emit_browser.js",
   "src/core/emit_selenium.js",   // depends on emit_browser (rfEscape, splitScenarios)
   "src/core/emit_report.js",     // depends on emit_browser (splitScenarios, emitStep)
+  "src/core/emit_istqb.js",      // depends on emit_browser + emit_report (phrases, mdCode)
   "src/core/resolve.js",         // depends on locators (ariaRole, accName, collapse)
   "src/panel/panel.js",
   "src/recorder.js",

@@ -22,7 +22,7 @@ each entry pins an exact count, so a second occurrence fails the guard.
 
 ## What this is
 
-**rf-web-recorder** (v0.5.0): a universal test recorder for modern web
+**rf-web-recorder** (v0.6.0): a universal test recorder for modern web
 interfaces that emits Robot Framework code targeting the **Browser library**
 (Playwright-based). Framework-agnostic by design: it never talks to React/
 Angular/Vue/Web Components: it reads the standards they all produce (DOM,
@@ -38,7 +38,15 @@ Born 2026-07-19 as the generalist sibling of the SAPFX project
 there: attribution in `NOTICE` (Apache-2.0). The exchange runs both ways:
 its sensitive-field masking went back to SAPFX, and SAPFX's documentation
 exports (HTML report, Markdown test plan: `src/core/emit_report.js`) and
-cross-origin iframe warning came here in the 0.5.0 pass (2026-08-05).
+cross-origin iframe warning came here in the 0.5.0 pass (2026-08-05). The
+0.6.0 pass (same day) ported SAPFX's **ISTQB export**
+(`src/core/emit_istqb.js`, "ISTQB test plan (.istqb.md)" menu entry): one
+Markdown document, ISO 29119-3 plan sections + one test case per scenario
+(Action / Data / Expected result table + a normalized framework-neutral
+`replay` YAML block: accessible name as the human target, recorded locator
+as a `hint` whose engine is the locator strategy); judgment fields stay
+"to complete", masked values become `fill_secret` and never reach the
+document.
 
 ## Layout
 
@@ -48,7 +56,7 @@ cross-origin iframe warning came here in the 0.5.0 pass (2026-08-05).
 | `build.mjs` | Zero-dependency build (Node only) → `dist/recorder_snippet.js` + `extension/recorder.js`. |
 | `extension/` | Chrome MV3 extension (manifest, popup, background, bridge; `recorder.js` is **generated** by the build, never edit it by hand). |
 | `package_extension.mjs` | Store zip assembler (`npm run package`). |
-| `test/` | `node --test` unit suites (build, Browser/Selenium emitters, report/plan builders, locators, resolve, steps) + `test/e2e/recorder_live.robot`. |
+| `test/` | `node --test` unit suites (build, Browser/Selenium emitters, report/plan/ISTQB builders, locators, resolve, steps) + `test/e2e/recorder_live.robot`. |
 | `demo/`, `docs/`, `comms/` | Scripted demo, docs assets, project communication material. |
 | `dist/` | Generated artifacts: rebuild, never edit in place. |
 | `memory/` | AI assistants' project memory (public-safe: see below). |

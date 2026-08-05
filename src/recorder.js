@@ -37,6 +37,7 @@
   function createRecorder() {
     var locators = CORE.locators, stepsCore = CORE.steps, emit = CORE.emit,
         emitSelenium = CORE.emitSelenium, emitReport = CORE.report,
+        emitIstqb = CORE.istqb,
         resolveCore = CORE.resolve, ui = CORE.panel;
     var doc = global.document;
 
@@ -544,6 +545,12 @@
         var plan = emitReport.buildPlan(opts);
         download(plan, fileSlug() + "-plan.md");
         copy(plan);
+      } else if (format === "istqb") {
+        // ISTQB test plan + test cases (ported back from SAPFX): human table
+        // per scenario plus a normalized framework-neutral replay YAML block.
+        var istqb = emitIstqb.buildIstqb(opts, target);
+        download(istqb, fileSlug() + "-istqb.md");
+        copy(istqb);
       } else if (format === "body") {
         copy(target.emitBody(steps));
       } else {
@@ -560,6 +567,7 @@
         { label: "Download .resource + .robot pair (SeleniumLibrary)", onPick: function () { exportAs("selenium-resource-pair"); } },
         { label: "Download HTML report (documentation)", onPick: function () { exportAs("report"); } },
         { label: "Download Markdown test plan (draft)", onPick: function () { exportAs("plan"); } },
+        { label: "Download ISTQB test plan (.istqb.md)", onPick: function () { exportAs("istqb"); } },
         { label: "Copy step body to clipboard", onPick: function () { exportAs("body"); } },
         { label: "Import .robot…", onPick: importRobot },
       ]);
