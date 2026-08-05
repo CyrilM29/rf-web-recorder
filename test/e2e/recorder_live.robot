@@ -14,7 +14,7 @@ Documentation       End-to-end test of the built bundle (dist/recorder_snippet.j
 ...                 The bundle is injected exactly like the console-snippet delivery mode
 ...                 (eval of the file content); URL.createObjectURL is intercepted so the
 ...                 exported suites can be asserted without touching the filesystem.
-...                 auto_closing_level=SUITE keeps the page alive between the two tests —
+...                 auto_closing_level=SUITE keeps the page alive between the two tests:
 ...                 the second one continues the first one's tab on purpose (reload test).
 
 Library             Browser    auto_closing_level=SUITE
@@ -30,7 +30,7 @@ ${BUNDLE}           ${CURDIR}${/}..${/}..${/}dist${/}recorder_snippet.js
 
 *** Test Cases ***
 Recording Masks Sensitive Fields And Exports Clean Suites
-    File Should Exist    ${BUNDLE}    Bundle not found — run `node build.mjs` first.
+    File Should Exist    ${BUNDLE}    Bundle not found: run `node build.mjs` first.
     ${url}=    Evaluate    pathlib.Path(r"${FIXTURE}").resolve().as_uri()    pathlib
     ${src}=    Get File    ${BUNDLE}
     New Browser    chromium    headless=${True}

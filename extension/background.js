@@ -1,15 +1,15 @@
 /*
  * Service worker (MV3). Two jobs:
- *   1. Toolbar badge — reflects the recording state relayed by bridge.js
+ *   1. Toolbar badge: reflects the recording state relayed by bridge.js
  *      (REC = recording).
- *   2. Keyboard shortcut (Alt+Shift+U, command "toggle-record") — injects the
+ *   2. Keyboard shortcut (Alt+Shift+U, command "toggle-record"): injects the
  *      recorder if absent (bridge ISOLATED + recorder MAIN, allFrames) and
  *      toggles recording without opening the popup.
  *
  * A user gesture (toolbar click or keyboard command) grants `activeTab` on the
  * current tab, so no host permissions are needed. Chromium (MV3 service
  * worker + scripting world MAIN, Chrome 111+) is the supported target; the
- * `browser` fallback below is defensive only — Firefox would additionally
+ * `browser` fallback below is defensive only: Firefox would additionally
  * need background.scripts and browser_specific_settings to run this.
  */
 const api = (typeof browser !== "undefined") ? browser : chrome;
@@ -52,7 +52,7 @@ api.commands.onCommand.addListener(async (command) => {
     });
   } catch (e) {
     // chrome://, the Web Store, the PDF viewer...: injection is not allowed
-    // there — say so on the badge instead of dying as an unhandled rejection.
+    // there: say so on the badge instead of dying as an unhandled rejection.
     api.action.setBadgeText({ tabId: tab.id, text: "n/a" });
     setTimeout(() => api.action.setBadgeText({ tabId: tab.id, text: "" }), 1500);
   }

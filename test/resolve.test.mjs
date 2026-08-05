@@ -1,4 +1,4 @@
-// node --test — core/resolve.js: the inverse of locator generation, plus the
+// node --test, core/resolve.js: the inverse of locator generation, plus the
 // pure replay planning + assertion evaluation, on duck-typed fake DOM nodes.
 import test from "node:test";
 import assert from "node:assert/strict";

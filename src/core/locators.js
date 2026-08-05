@@ -1,5 +1,5 @@
 /*
- * rf-web-recorder — core/locators.js
+ * rf-web-recorder: core/locators.js
  *
  * Locator candidate generation and scoring for Playwright-style selectors as
  * consumed by the Robot Framework Browser library.
@@ -7,7 +7,7 @@
  * Pure logic, duck-typed: every function accepts plain objects that look like
  * DOM nodes (tagName, getAttribute(), textContent, parentElement,
  * previousElementSibling, children...). Real DOM elements satisfy the same
- * interface at runtime; unit tests pass minimal fake nodes — no jsdom needed.
+ * interface at runtime; unit tests pass minimal fake nodes, no jsdom needed.
  *
  * Candidate priority (first candidate that resolves UNIQUELY wins):
  *   1. explicit test ids  (data-testid / data-test-id / data-test / data-cy)
@@ -17,7 +17,7 @@
  *   5. short unique trimmed text             -> text="..."
  *   6. anchored CSS path (nearest stable-id ancestor + nth-of-type chain)
  *
- * Ported from the author's SAPFX project (Apache-2.0) and generalized — see NOTICE.
+ * Ported from the author's SAPFX project (Apache-2.0) and generalized: see NOTICE.
  */
 (function (global, factory) {
   "use strict";
@@ -159,7 +159,7 @@
   // Nearest stable-id ancestor as the anchor ([id="..."] is always a safe CSS
   // literal), then an nth-of-type chain down to the element. Crossing an OPEN
   // shadow root boundary hops to the host and joins with a descendant
-  // combinator — Playwright's CSS engine pierces open shadow roots, so the
+  // combinator: Playwright's CSS engine pierces open shadow roots, so the
   // plain selector keeps working for click/fill.
   function cssPath(el) {
     var parts = [];
@@ -280,7 +280,7 @@
   }
   function countMatches(cand, doc) {
     if (cand.strategy === "css-path") {
-      // nth-of-type chain from a unique anchor — verify with the CSS engine
+      // nth-of-type chain from a unique anchor: verify with the CSS engine
       // when one is available (a duplicated anchor id would break uniqueness);
       // a count of 0 means the element sits in a shadow tree plain CSS cannot
       // see but Playwright's piercing engine can: trust the construction.
@@ -298,7 +298,7 @@
   }
 
   // The first candidate that resolves uniquely on the page wins. Returns
-  // { selector, strategy, candidates } — the strategy is surfaced in the panel
+  // { selector, strategy, candidates }: the strategy is surfaced in the panel
   // so users can judge the robustness of every recorded step.
   function bestLocator(el, doc) {
     doc = docOf(el, doc);

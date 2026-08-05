@@ -1,5 +1,5 @@
 /*
- * rf-web-recorder — core/resolve.js
+ * rf-web-recorder: core/resolve.js
  *
  * The INVERSE of locator generation: resolve a recorded selector back to the
  * matching element(s) so recorded steps can be REPLAYED in place, plus the
@@ -14,7 +14,7 @@
  *
  * Pure logic, duck-typed like the rest of core: works against any object
  * shaped like a document/element. Fake docs without querySelector fall back
- * to a children walk for every scannable form — only raw CSS paths genuinely
+ * to a children walk for every scannable form: only raw CSS paths genuinely
  * need a CSS engine.
  */
 (function (global, factory) {
@@ -32,7 +32,7 @@
 
   // ---- duck-typed document scan (mirror of locators.js allElements) --------
   // Pierces open shadow roots like the Playwright engines the recorded
-  // locators target — replay must resolve what the export will resolve.
+  // locators target: replay must resolve what the export will resolve.
   function allElements(doc) {
     if (doc && typeof doc.querySelectorAll === "function") {
       try {
@@ -158,7 +158,7 @@
   }
 
   // ---- assertion evaluation (pure given a doc) -----------------------------
-  // Returns { ok, reason?, element? } — the element travels back so the
+  // Returns { ok, reason?, element? }: the element travels back so the
   // replayer can highlight what it checked.
   function evalAssertion(step, doc) {
     var loc = step && step.locator;

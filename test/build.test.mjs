@@ -1,4 +1,4 @@
-// node --test — build.mjs produces both bundles; manifest is valid MV3 JSON.
+// node --test: build.mjs produces both bundles; manifest is valid MV3 JSON.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -43,7 +43,7 @@ test("extension manifest is valid MV3 JSON with the expected surface", () => {
   assert.equal(manifest.background.service_worker, "background.js");
   assert.equal(manifest.commands["toggle-record"].suggested_key.default, "Alt+Shift+U");
   assert.equal(manifest.action.default_popup, "popup.html");
-  assert.equal(manifest.icons, undefined, "no icon files shipped — none referenced");
+  assert.equal(manifest.icons, undefined, "no icon files shipped: none referenced");
 });
 
 test("package.json declares no dependencies at all", () => {
@@ -56,7 +56,7 @@ test("package.json declares no dependencies at all", () => {
 test("our own transient DOM helpers are parented to the panel, never the document", () => {
   // Live find (0.3.1): the export download anchor was appended to
   // documentElement and its synthetic .click() got RECORDED as a step with a
-  // bogus locator — every export polluted the next recording.
+  // bogus locator: every export polluted the next recording.
   const bundle = readFileSync(path.join(ROOT, "dist", "recorder_snippet.js"), "utf8");
   assert.ok(bundle.includes("function ourTransientHost()"));
   assert.ok(bundle.includes("ourTransientHost().appendChild(a)"));
@@ -66,7 +66,7 @@ test("our own transient DOM helpers are parented to the panel, never the documen
 });
 
 test("Enter/Tab capture is deferred so a field's change lands first", () => {
-  // Live find (visible demo): `change` fires on blur, i.e. after the keydown —
+  // Live find (visible demo): `change` fires on blur, i.e. after the keydown,
   // recording the key immediately emitted `Keyboard Key press Tab` BEFORE the
   // `Fill Text` it actually followed, which broke replay on Enter-submits.
   // The deferred step is parked in pendingPress so onBeforeUnload can still

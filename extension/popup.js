@@ -2,7 +2,7 @@
  * Popup controller. Injects the recorder bundle into the active tab's MAIN
  * world (same JS context as the page) plus a small ISOLATED bridge (toolbar
  * badge), and drives it: Start capture / Start record / Export / Stop.
- * Uses `activeTab` — access is granted for the current tab when the user
+ * Uses `activeTab`: access is granted for the current tab when the user
  * clicks the toolbar icon, so no host permissions are needed.
  */
 const api = (typeof browser !== "undefined") ? browser : chrome;

@@ -1,5 +1,5 @@
 /*
- * rf-web-recorder — core/steps.js
+ * rf-web-recorder: core/steps.js
  *
  * Step model + compaction rules + sensitive-field masking. Pure logic,
  * unit-testable without a DOM.
@@ -12,11 +12,11 @@
  *        multiple test cases)
  *
  * Compaction rules (applied on append, and again by compact()):
- *   - consecutive identical steps are deduped — except two identical CLICKS
+ *   - consecutive identical steps are deduped: except two identical CLICKS
  *     whose timestamps (`t`, ms) are far enough apart: clicking a "+" stepper
  *     twice is intent, the dedup only guards against double-dispatched events;
  *   - consecutive `fill` steps on the same locator keep only the LAST value
- *     (typing emits many change events — only the final value matters);
+ *     (typing emits many change events: only the final value matters);
  *   - consecutive `wait-load` steps collapse to one;
  *   - `test` markers pass through untouched, and BREAK the adjacency the
  *     fill/wait rules rely on (a marker is a scenario boundary).

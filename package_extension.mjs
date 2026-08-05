@@ -1,8 +1,8 @@
 /*
- * package_extension.mjs — zips extension/ into
+ * package_extension.mjs: zips extension/ into
  * dist/rf-web-recorder-extension-<version>.zip using only node built-ins.
  *
- * Minimal ZIP writer: STORED entries (no compression — the payload is a few
+ * Minimal ZIP writer: STORED entries (no compression, the payload is a few
  * small text files), standard local headers + central directory + EOCD.
  * Chrome Web Store and `chrome://extensions` both accept stored archives.
  *

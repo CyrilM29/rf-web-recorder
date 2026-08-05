@@ -1,8 +1,8 @@
 /*
- * rf-web-recorder — main.js
+ * rf-web-recorder: main.js
  *
  * Entry point: bootstraps the public `window.__RFREC` API and auto-starts
- * capture mode on injection. Idempotent — the bundle wrapper re-calls
+ * capture mode on injection. Idempotent: the bundle wrapper re-calls
  * `__RFREC.start()` instead of re-installing when pasted twice.
  */
 (function (global) {

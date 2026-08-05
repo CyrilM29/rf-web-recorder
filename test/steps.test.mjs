@@ -1,4 +1,4 @@
-// node --test — core/steps.js dedup + compaction rules (pure logic).
+// node --test: core/steps.js dedup + compaction rules (pure logic).
 import test from "node:test";
 import assert from "node:assert/strict";
 import stepsCore from "../src/core/steps.js";

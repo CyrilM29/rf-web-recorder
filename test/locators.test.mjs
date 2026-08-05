@@ -1,4 +1,4 @@
-// node --test — core/locators.js on minimal duck-typed fake DOM nodes (no jsdom).
+// node --test: core/locators.js on minimal duck-typed fake DOM nodes (no jsdom).
 import test from "node:test";
 import assert from "node:assert/strict";
 import locators from "../src/core/locators.js";

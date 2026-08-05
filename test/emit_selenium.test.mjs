@@ -1,5 +1,5 @@
 /*
- * emit_selenium.test.mjs — SeleniumLibrary emission adapter.
+ * emit_selenium.test.mjs: SeleniumLibrary emission adapter.
  * Focus: locator translation (Selenium has no role=/text= engines), keyword
  * mapping, and the two export shapes mirroring emit_browser's.
  */
@@ -63,7 +63,7 @@ test("assertions map to SeleniumLibrary assertion keywords", () => {
     ['Page Should Contain Element    css:[data-testid="row"]    limit=3']);
 });
 
-test("untranslatable steps become comments — information is never dropped", () => {
+test("untranslatable steps become comments: information is never dropped", () => {
   const lines = sel.emitStep({ type: "click", locator: 'role=button[name="Submit"]' });
   assert.equal(lines.length, 1);
   assert.ok(lines[0].startsWith("# untranslatable to SeleniumLibrary"));

@@ -1,4 +1,4 @@
-// node --test — core/emit_browser.js keyword emission and suite/resource builders.
+// node --test: core/emit_browser.js keyword emission and suite/resource builders.
 import test from "node:test";
 import assert from "node:assert/strict";
 import emit from "../src/core/emit_browser.js";
@@ -290,7 +290,7 @@ test("parseSuite: unparseable lines are surfaced in `skipped`, never dropped", (
 
 test("keyword names never come from a purely numeric value", () => {
   // Live find: an assert-text on a counter <span> (no accessible name) produced
-  // the keyword "1 Text Should Be" — the slug came from the VALUE. The locator
+  // the keyword "1 Text Should Be": the slug came from the VALUE. The locator
   // names the target, so it wins over a numeric value.
   const pair = emit.buildResourcePair({
     testName: "Counter",
@@ -322,7 +322,7 @@ test("rfEscape: value mode escapes a would-be named argument", () => {
 });
 test("rfEscape: a trailing space after a literal backslash is still escaped", () => {
   assert.equal(rfEscape("dir\\ "), "dir\\\\\\ ");     // \ doubles, then the space gets its own \
-  assert.equal(rfEscape(" "), "\\ ");                 // leading rule already escaped it — no double
+  assert.equal(rfEscape(" "), "\\ ");                 // leading rule already escaped it, no double
 });
 test("fill with ${...} in the value round-trips as literal text", () => {
   const line = emitStep({ type: "fill", locator: "id=q", value: "Hello ${name}" })[0];
@@ -356,7 +356,7 @@ test("buildResourcePair: a locator named like an Object.prototype member still w
   assert.ok(!pair.suite.includes("undefined"));
   assert.ok(pair.suite.includes("Click Constructor"));
 });
-test("buildResourcePair: capture steps get a keyword too — no raw locator in the suite", () => {
+test("buildResourcePair: capture steps get a keyword too, no raw locator in the suite", () => {
   const pair = buildResourcePair({ steps: [{ type: "capture", locator: "id=hdr", name: "Header" }] });
   assert.ok(!pair.suite.includes("id=hdr"), "locators must never leak into the test");
   assert.ok(pair.resource.includes("Get Element    ${LOC_1_HEADER}"));

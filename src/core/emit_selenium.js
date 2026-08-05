@@ -1,11 +1,11 @@
 /*
- * rf-web-recorder — core/emit_selenium.js
+ * rf-web-recorder: core/emit_selenium.js
  *
  * Step -> Robot Framework SeleniumLibrary keyword emission. Pure logic.
  * Second emission adapter next to emit_browser.js (same step model, same
  * export shapes) for teams still on SeleniumLibrary.
  *
- * Locator translation — SeleniumLibrary has no Playwright engines:
+ * Locator translation, SeleniumLibrary has no Playwright engines:
  *   - `role=…[name=…]` and `text=…` selectors CANNOT be expressed; each
  *     recorded step carries a `css` fallback (the anchored CSS path computed
  *     at capture time) which is used instead, as `css:<path>`;
@@ -13,9 +13,9 @@
  *   - everything else (test-id / placeholder attribute selectors, CSS paths)
  *     is plain CSS       -> `css:<selector>`
  * A step whose locator needs the CSS fallback but has none recorded (e.g.
- * steps restored from a pre-0.2 session) is kept as a comment — the
+ * steps restored from a pre-0.2 session) is kept as a comment: the
  * information is never silently dropped.
- * Limit: Playwright CSS pierces open shadow roots, Selenium CSS does not —
+ * Limit: Playwright CSS pierces open shadow roots, Selenium CSS does not,
  * steps recorded inside shadow DOM may not replay under Selenium.
  */
 (function (global, factory) {
@@ -48,7 +48,7 @@
   }
 
   // Selenium key names are UPPER_SNAKE: camel-case DOM keys split on the case
-  // boundary (ArrowDown -> ARROW_DOWN) — a bare toUpperCase() would emit the
+  // boundary (ArrowDown -> ARROW_DOWN): a bare toUpperCase() would emit the
   // invalid ARROWDOWN for any key set through the panel's step editor.
   function seleniumKeyName(key) {
     return KEY_NAMES[key] ||
@@ -56,7 +56,7 @@
   }
 
   // One step -> one SeleniumLibrary keyword line (or a comment, never a loss).
-  // `esc` (default rfEscape) — see emit_browser.emitStep.
+  // `esc` (default rfEscape): see emit_browser.emitStep.
   function emitStep(step, esc) {
     var E = esc || rfEscape;
     if (!step) return [];
@@ -106,7 +106,7 @@
 
   // Full runnable .robot suite (SeleniumLibrary session bootstrap). `test`
   // markers split it into several test cases; Open Browser runs only in the
-  // first one — later tests continue the same session.
+  // first one: later tests continue the same session.
   function buildSuite(opts) {
     opts = opts || {};
     var lines = [];
@@ -143,7 +143,7 @@
     var resourceName = opts.resourceName || "recorded_keywords.resource";
 
     // 1. distinct TRANSLATED locators -> ${LOC_<N>_<SLUG>} variables
-    // Object.create(null): see emit_browser — a locator spelled like an
+    // Object.create(null): see emit_browser, a locator spelled like an
     // Object.prototype member must not hit an inherited property.
     var varByLocator = Object.create(null);
     var varOrder = [];

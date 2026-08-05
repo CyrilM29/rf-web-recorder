@@ -1,5 +1,5 @@
 /*
- * rf-web-recorder — core/emit_browser.js
+ * rf-web-recorder: core/emit_browser.js
  *
  * Step -> Robot Framework Browser-library keyword emission. Pure logic.
  *
@@ -9,7 +9,7 @@
  *   buildResourcePair(opts)  -> { resource, suite, resourceName }:
  *       every distinct locator becomes a ${LOC_<N>_<SLUG>} variable + small
  *       action keywords in a .resource file; the .robot test calls only those
- *       keywords (locators never leak into the test — resource-first pattern).
+ *       keywords (locators never leak into the test: resource-first pattern).
  *       A step whose recorded CSS-path fallback differs from its winning
  *       locator additionally gets a ${LOC_<N>_<SLUG>_FALLBACK} variable and an
  *       IF/ELSE keyword body that falls back to the CSS path (with a WARN log)
@@ -17,11 +17,11 @@
  *
  * `test` marker steps ({ type: "test", name }) split every export shape into
  * multiple *** Test Cases *** entries; the session bootstrap (New Browser /
- * New Page) is emitted only in the FIRST test — later tests continue the same
+ * New Page) is emitted only in the FIRST test: later tests continue the same
  * browser session.
  *
  * parseSuite(text) is the inverse of buildSuite: it reads an exported .robot
- * back into { testName, url, steps, skipped } — unparseable lines land in
+ * back into { testName, url, steps, skipped }: unparseable lines land in
  * `skipped`, never silently dropped.
  */
 (function (global, factory) {
@@ -39,7 +39,7 @@
   // spaces (token separators), and leading '#' (comment) / leading-trailing
   // spaces (stripped) are protected. With `isValue`, a leading "word=" is also
   // escaped so a recorded value can never turn into a named argument (Browser
-  // keywords have parameters like force/txt — `force=True` as a literal value
+  // keywords have parameters like force/txt: `force=True` as a literal value
   // would otherwise be swallowed as `force=` and the call would lose it).
   function rfEscape(value, isValue) {
     if (value === undefined || value === null) return "${EMPTY}";
@@ -88,8 +88,8 @@
   }
 
   // rfEscape variant for resource-pair keyword bodies: our generated variable
-  // references (${LOC_...}, ${value}, ...) must stay live; anything else —
-  // i.e. every recorded value — escapes normally.
+  // references (${LOC_...}, ${value}, ...) must stay live; anything else:
+  // i.e. every recorded value: escapes normally.
   function refEscape(v, isValue) {
     var s = String(v === undefined || v === null ? "" : v);
     if (/^\$\{[A-Za-z_][A-Za-z0-9_]*\}$/.test(s)) return s;
@@ -393,7 +393,7 @@
   //     are recognized and dropped (New Page still yields `url`);
   //   - the first test-case name becomes testName, every further one becomes
   //     a { type: "test", name } marker;
-  //   - anything else unparseable lands in `skipped` — never silently dropped.
+  //   - anything else unparseable lands in `skipped`, never silently dropped.
   function parseSuite(text) {
     var lines = String(text || "").split(/\r?\n/);
     var section = "";
@@ -415,7 +415,7 @@
       }
       var body = line.replace(/^\s+/, "");
       if (body.charAt(0) === "#") continue;          // comments carry no step
-      // Trailing whitespace (editor artifacts) is not data — unless the last
+      // Trailing whitespace (editor artifacts) is not data: unless the last
       // space is escaped (odd backslash run before it: `\ ` survives).
       var tail = /^(.*?)([ \t]+)$/.exec(body);
       if (tail) {

@@ -7,12 +7,12 @@ node_modules/
 # Packaged extension archives
 *.zip
 
-# Local demo material (video generator + fixture page) — not part of the release
+# Local demo material (video generator + fixture page), not part of the release
 demo/
 
-# Local notes / TODO scratch files — never published
+# Local notes / TODO scratch files, never published
 *.local.md
 
-# Internal comms base (positioning, tone, post drafts) — strategy material,
+# Internal comms base (positioning, tone, post drafts): strategy material,
 # kept local like demo/; never part of the public repo
 comms/
