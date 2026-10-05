@@ -133,16 +133,24 @@
     return (opts && opts.testName ? String(opts.testName) : "").trim() || "Recorded Scenario";
   }
 
+  // Several scenarios share ONE browser session: the bootstrap (New Browser /
+  // New Page) lives in the first test only, and the Browser library closes a
+  // test's pages at its end by default (auto_closing_level=TEST), so the
+  // second test ran without a page ("Could not find active page").
+  function browserImport(groupCount) {
+    return "Library" + SEP + "Browser" + (groupCount > 1 ? SEP + "auto_closing_level=SUITE" : "");
+  }
+
   // Full runnable .robot suite. `test` markers split it into several test
   // cases; the browser bootstrap runs only in the first one.
   function buildSuite(opts) {
     opts = opts || {};
+    var groups = splitScenarios(opts.steps);
     var lines = [];
     lines.push("*** Settings ***");
-    lines.push("Library" + SEP + "Browser");
+    lines.push(browserImport(groups.length));
     lines.push("");
     lines.push("*** Test Cases ***");
-    var groups = splitScenarios(opts.steps);
     groups.forEach(function (group, gi) {
       lines.push(scenarioName(group, gi, testNameOf(opts)));
       if (gi === 0) {
@@ -230,6 +238,7 @@
     var keywordByShape = Object.create(null); // "<type> <locator>" -> name
     var usedNames = Object.create(null);
     var suiteCalls = [];     // strings, or { marker: name } scenario boundaries
+    var usesStepTimeout = false;
     steps.forEach(function (st) {
       if (st.type === "test") { suiteCalls.push({ marker: String(st.name || "") }); return; }
       var shape = KEYWORD_SHAPES[st.type];
@@ -261,11 +270,17 @@
                             value: shape.arg ? argRef : st.value, key: st.key }, refEscape)[0];
         }
         if (entry.fallback) {
-          // Self-healing body: try the primary locator, fall back to the
-          // recorded CSS path with a WARN so the drift never goes unnoticed.
+          // Self-healing body: WAIT for the primary locator (bounded), fall
+          // back to the recorded CSS path with a WARN so the drift never goes
+          // unnoticed. An immediate Get Element Count read 0 on a page still
+          // rendering and took the fallback (with a false WARN) although the
+          // primary locator was right: the decision has to wait like Click does.
           var fbRef = "${" + entry.fallback.variable + "}";
-          body.push(SEP + "${found}=" + SEP + "Get Element Count" + SEP + locRef);
-          body.push(SEP + "IF" + SEP + "${found} > 0");
+          usesStepTimeout = true;
+          body.push(SEP + "${found}=" + SEP + "Run Keyword And Return Status" + SEP +
+                    "Wait For Elements State" + SEP + locRef + SEP + "attached" + SEP +
+                    "timeout=${RECORDED_STEP_TIMEOUT}");
+          body.push(SEP + "IF" + SEP + "${found}");
           body.push(SEP + SEP + actionLine(locRef));
           body.push(SEP + "ELSE");
           body.push(SEP + SEP + "Log" + SEP +
@@ -281,11 +296,17 @@
     });
 
     // 3. resource text
+    var groups = splitScenarios(suiteCalls);
     var res = [];
     res.push("*** Settings ***");
-    res.push("Library" + SEP + "Browser");
+    res.push(browserImport(groups.length));
     res.push("");
     res.push("*** Variables ***");
+    if (usesStepTimeout) {
+      // how long a self-healing keyword waits for its primary locator before
+      // falling back: the Browser library's default timeout, overridable with -v
+      res.push("${RECORDED_STEP_TIMEOUT}" + SEP + "10s");
+    }
     varOrder.forEach(function (loc) {
       var entry = varByLocator[loc];
       res.push("${" + entry.variable + "}" + SEP + rfEscape(loc));
@@ -307,7 +328,6 @@
     suite.push("Resource" + SEP + resourceName);
     suite.push("");
     suite.push("*** Test Cases ***");
-    var groups = splitScenarios(suiteCalls);
     groups.forEach(function (group, gi) {
       suite.push(scenarioName(group, gi, testNameOf(opts)));
       if (gi === 0) {

@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Recorder: Enter validates without a native change event</title>
+</head>
+<body>
+  <!-- A UI5 SearchField validates on Enter and swallows the key: the browser then never
+       fires the native `change` event before the blur. This page does the same, offline. -->
+  <label for="q">Search</label>
+  <input id="q" type="search" aria-label="Search" autocomplete="off">
+  <button id="other" type="button">Elsewhere</button>
+  <script>
+    window.__enters = 0;
+    document.getElementById('q').addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); window.__enters++; }
+    });
+  </script>
+</body>
+</html>

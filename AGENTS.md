@@ -7,7 +7,10 @@ Condensed guide for AI coding assistants working on **rf-web-recorder**
 library: see `README.md` / `README.fr.md`, kept bilingual with cross-link
 banners). Respond to the user in French; code, keyword names and identifiers
 stay in English. Sibling of the SAPFX project (`E:\QA_GenAI\SAP_library_custom`)
-its generic dom engine was ported from there (attribution in `NOTICE`).
+its generic dom engine was ported from there (attribution in `NOTICE`); the
+exchange runs both ways (0.6.1, 2026-10-04: Enter recorded after its typed value,
+multi-scenario exports with `auto_closing_level=SUITE`, a fallback that waits
+for its primary locator, all ported from SAPFX).
 
 Never use the em dash (« — ») anywhere in this repo (docs, READMEs, specs,
 docstrings, comments, emitted strings, workflows, config): use a colon, a

@@ -177,12 +177,12 @@ test("buildResourcePair: css fallback becomes a _FALLBACK variable + IF/ELSE bod
   assert.match(resource, /\$\{LOC_1_USERNAME\}    role=textbox\[name="Username"\]/);
   assert.match(resource, /\$\{LOC_1_USERNAME_FALLBACK\}    \[id="login"\] > input:nth-of-type\(1\)/);
   assert.match(resource, /\$\{LOC_2_LOG_IN_FALLBACK\}    \[id="login"\] > button:nth-of-type\(1\)/);
-  // IF/ELSE body probing the primary first, arg used in BOTH branches
+  // IF/ELSE body WAITING for the primary first (bounded), arg used in BOTH branches
   const expectedBody = [
     "Fill Username",
     "    [Arguments]    ${value}",
-    "    ${found}=    Get Element Count    ${LOC_1_USERNAME}",
-    "    IF    ${found} > 0",
+    "    ${found}=    Run Keyword And Return Status    Wait For Elements State    ${LOC_1_USERNAME}    attached    timeout=${RECORDED_STEP_TIMEOUT}",
+    "    IF    ${found}",
     "        Fill Text    ${LOC_1_USERNAME}    ${value}",
     "    ELSE",
     "        Log    Primary locator not found - falling back to the recorded CSS path    WARN",
@@ -190,7 +190,11 @@ test("buildResourcePair: css fallback becomes a _FALLBACK variable + IF/ELSE bod
     "    END",
   ].join("\n");
   assert.ok(resource.includes(expectedBody), "IF/ELSE fallback body emitted verbatim");
-  assert.match(resource, /Click Log In\n    \$\{found\}=    Get Element Count    \$\{LOC_2_LOG_IN\}/);
+  assert.match(resource, /Click Log In\n    \$\{found\}=    Run Keyword And Return Status    Wait For Elements State    \$\{LOC_2_LOG_IN\}    attached/);
+  // the decision waits (bounded) instead of counting at once: a page still
+  // rendering read 0 and took the fallback with a false WARN
+  assert.match(resource, /^\$\{RECORDED_STEP_TIMEOUT\}    10s$/m);
+  assert.ok(!resource.includes("Get Element Count"), "no immediate count decides the fallback");
   // the suite stays locator-free either way
   assert.ok(!suite.includes("role="));
   assert.ok(!suite.includes("nth-of-type"));
@@ -368,4 +372,31 @@ test("buildResourcePair: generated variable references stay live, recorded value
   });
   assert.ok(pair.resource.includes("Fill Text    ${LOC_1_QUERY}    ${value}"));
   assert.ok(pair.suite.includes("Fill Query    x\\${y}"));
+});
+
+test("buildSuite: several scenarios keep the page open across tests", () => {
+  const multi = buildSuite({ url: "https://example.test/", steps: [
+    { type: "click", locator: "id=a" }, { type: "test", name: "Second" }, { type: "click", locator: "id=a" },
+  ] });
+  // the bootstrap lives in the first test only: Browser must not close its page at the test end
+  assert.match(multi, /^Library    Browser    auto_closing_level=SUITE$/m);
+  const single = buildSuite({ url: "https://example.test/", steps: [{ type: "click", locator: "id=a" }] });
+  assert.match(single, /^Library    Browser$/m);
+  assert.ok(!single.includes("auto_closing_level"), "a single scenario keeps the plain import");
+});
+
+test("buildResourcePair: several scenarios keep the page open (import in the resource)", () => {
+  const { resource, suite } = buildResourcePair({ steps: [
+    { type: "click", locator: "id=a", name: "A" }, { type: "test", name: "Second" },
+    { type: "click", locator: "id=a", name: "A" },
+  ] });
+  assert.match(resource, /^Library    Browser    auto_closing_level=SUITE$/m);
+  assert.ok(!suite.includes("Library"), "the suite still imports only the resource");
+});
+
+test("buildResourcePair: the fallback timeout variable exists only when a fallback does", () => {
+  const without = buildResourcePair({ steps: [
+    { type: "click", locator: 'role=button[name="Go"]', strategy: "role", name: "Go" },
+  ] }).resource;
+  assert.ok(!without.includes("RECORDED_STEP_TIMEOUT"), "no unused variable");
 });

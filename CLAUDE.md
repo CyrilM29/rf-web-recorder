@@ -24,7 +24,7 @@ each entry pins an exact count, so a second occurrence fails the guard.
 
 ## What this is
 
-**rf-web-recorder** (v0.6.0): a universal test recorder for modern web
+**rf-web-recorder** (v0.6.1): a universal test recorder for modern web
 interfaces that emits Robot Framework code targeting the **Browser library**
 (Playwright-based). Framework-agnostic by design: it never talks to React/
 Angular/Vue/Web Components: it reads the standards they all produce (DOM,
@@ -48,7 +48,13 @@ Markdown document, ISO 29119-3 plan sections + one test case per scenario
 `replay` YAML block: accessible name as the human target, recorded locator
 as a `hint` whose engine is the locator strategy); judgment fields stay
 "to complete", masked values become `fill_secret` and never reach the
-document.
+document. The 0.6.1 pass (2026-10-04) ported three SAPFX recorder fixes found while
+filming it end to end: a value still being typed is recorded before the
+Enter/Tab press (a page that handles Enter itself fires no `change` before the
+blur: `createFillTracker` in `src/core/steps.js`), a multi-scenario export
+imports `Library    Browser    auto_closing_level=SUITE` (the bootstrap lives in
+the first test only), and the resource-pair fallback waits for its primary
+locator (`${RECORDED_STEP_TIMEOUT}`, 10 s) instead of counting it at once.
 
 ## Layout
 

@@ -26,6 +26,7 @@ Suite Teardown      Close Browser
 *** Variables ***
 ${FIXTURE}          ${CURDIR}${/}sensitive_page.html
 ${BUNDLE}           ${CURDIR}${/}..${/}..${/}dist${/}recorder_snippet.js
+${ENTER_FIXTURE}    ${CURDIR}${/}enter_page.html
 
 
 *** Test Cases ***
@@ -125,3 +126,23 @@ Recording Survives A Reload Then Replays Against The Live Page
     ${pass}=    Get Property    id=pass    value
     Should Be Equal    ${pass}    <PASSWORD>
     Take Screenshot    fullPage=${True}
+
+Enter Records The Typed Value Before The Key
+    [Documentation]    A page that handles Enter itself (keydown + preventDefault) fires no
+    ...                native `change` before the blur: the typed value must still be
+    ...                recorded BEFORE the Enter press, and only once.
+    ${url}=    Evaluate    pathlib.Path(r"${ENTER_FIXTURE}").resolve().as_uri()    pathlib
+    ${src}=    Get File    ${BUNDLE}
+    New Page    ${url}
+    Evaluate JavaScript    ${None}    () => sessionStorage.clear()
+    Evaluate JavaScript    ${None}    (s) => { (0,eval)(s); }    arg=${src}
+    Wait For Function    () => !!window.__RFREC    timeout=10s
+    Evaluate JavaScript    ${None}    () => window.__RFREC.setRecording(true)
+    Click    id=q
+    Type Text    id=q    Aussie    delay=0:00:00.02
+    Keyboard Key    press    Enter
+    Click    id=other
+    ${order}=    Evaluate JavaScript    ${None}
+    ...    () => JSON.parse(sessionStorage.getItem('__rfrecSteps')).map(s => s.type + (s.value ? '=' + s.value : '') + (s.key ? '=' + s.key : '')).join(',')
+    Should Be Equal    ${order}    click,fill=Aussie,press=Enter,click
+    ...    msg=the fill must precede the Enter press and appear once (recorded: ${order})

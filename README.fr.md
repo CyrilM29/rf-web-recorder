@@ -124,7 +124,7 @@ deviennent des steps ordonnés :
 | choix d'une option | `Select Options By    <locator>    label    <libellé>` |
 | cocher / décocher une case | `Check Checkbox` / `Uncheck Checkbox` |
 | clic sur un bouton radio | `Click    <locator>` |
-| Entrée / Tab | `Keyboard Key    press    Enter` |
+| Entrée / Tab | `Keyboard Key    press    Enter` (une valeur en cours de saisie est enregistrée d'abord : une page qui gère Entrée elle-même n'émet aucun `change` avant le blur) |
 | navigation hash / historique | `Wait For Load State    load` |
 
 La compaction est automatique : les doublons quasi simultanés sont
@@ -166,8 +166,10 @@ scénario (`· Test: nom ·`) est ajoutée, et chaque export découpe
 l'enregistrement en plusieurs entrées `*** Test Cases ***` : le premier test
 porte le nom éditable et l'amorce `New Browser`/`New Page`, chaque marqueur
 nomme le test suivant, et les tests suivants **continuent la même session
-navigateur** (pas de ré-amorçage). Le rejeu traite les marqueurs comme des
-séparateurs.
+navigateur** (pas de ré-amorçage : les Settings importent alors
+`Library    Browser    auto_closing_level=SUITE`, la bibliothèque Browser
+refermant sinon les pages d'un test à sa fin). Le rejeu traite les marqueurs
+comme des séparateurs.
 
 **Menu d'assertions** : pendant l'enregistrement, **clic droit** sur un élément :
 
@@ -210,8 +212,8 @@ popup utilise le premier) :
 
    ```robotframework
    Click Username
-       ${found}=    Get Element Count    ${LOC_1_USERNAME}
-       IF    ${found} > 0
+       ${found}=    Run Keyword And Return Status    Wait For Elements State    ${LOC_1_USERNAME}    attached    timeout=${RECORDED_STEP_TIMEOUT}
+       IF    ${found}
            Click    ${LOC_1_USERNAME}
        ELSE
            Log    Primary locator not found - falling back to the recorded CSS path    WARN
@@ -219,8 +221,12 @@ popup utilise le premier) :
        END
    ```
 
-   Le localisateur principal est essayé d'abord ; le chemin CSS ne prend le
-   relais que s'il ne résout plus, et le WARN rend la dérive visible dans le
+   Le localisateur principal est attendu d'abord (`${RECORDED_STEP_TIMEOUT}`,
+   10 s, le délai par défaut de la bibliothèque Browser, surchargeable par
+   `-v`) : un comptage immédiat lisait 0 sur une page encore en cours de rendu
+   et prenait le repli avec un faux WARN. Le chemin CSS ne prend le relais que
+   si le principal ne résout toujours pas après cette attente, et le WARN rend
+   la dérive visible dans le
    log au lieu de la masquer. Les keywords à valeur gardent leur `[Arguments]`
    et utilisent l'argument dans les deux branches. (L'émetteur SeleniumLibrary
    reste volontairement inchangé : il consomme déjà directement le repli CSS

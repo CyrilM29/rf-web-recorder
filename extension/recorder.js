@@ -1,5 +1,5 @@
 /*
- * rf-web-recorder v0.6.0: universal Robot Framework Browser-library recorder.
+ * rf-web-recorder v0.6.1: universal Robot Framework Browser-library recorder.
  *
  * Hover to highlight + click to capture locators; « rec » records your
  * interactions as replayable Browser-library keywords; « play » replays the
@@ -458,8 +458,35 @@
     return SENSITIVE_HINT.test(hint) ? "<SECRET>" : null;
   }
 
+  // ---- typed values still waiting for their `change` event ----------------
+  // A field whose page handles Enter itself (keydown + preventDefault: search
+  // boxes, chat inputs, most SPA forms) never fires a native `change` before
+  // the blur. Recording only on `change` then put the Enter BEFORE the fill it
+  // followed, and the replay pressed Enter on an empty field. The tracker lets
+  // the recorder commit a typed value at the key press instead, and skip the
+  // late `change` that would record it a second time. Keys are DOM elements;
+  // a WeakMap keeps nothing alive after the page drops them.
+  function createFillTracker() {
+    var Store = typeof WeakMap === "function" ? WeakMap : Map;
+    var dirty = new Store();      // element -> true once typed into, until committed
+    var recorded = new Store();   // element -> last value already recorded
+    return {
+      edited: function (el) { if (el) dirty.set(el, true); },
+      isPending: function (el) { return !!el && dirty.has(el); },
+      committed: function (el, value) {
+        if (!el) return;
+        dirty.delete(el);
+        recorded.set(el, value);
+      },
+      // true when `change` reports a value the key press already recorded
+      alreadyRecorded: function (el, value) {
+        return !!el && recorded.has(el) && recorded.get(el) === value;
+      },
+    };
+  }
+
   return { addStep: addStep, compact: compact, isSame: isSame, stepKey: stepKey,
-           sensitiveMask: sensitiveMask };
+           sensitiveMask: sensitiveMask, createFillTracker: createFillTracker };
 });
 
 // ---- src/core/emit_browser.js --------------------------------------------
@@ -598,16 +625,24 @@
     return (opts && opts.testName ? String(opts.testName) : "").trim() || "Recorded Scenario";
   }
 
+  // Several scenarios share ONE browser session: the bootstrap (New Browser /
+  // New Page) lives in the first test only, and the Browser library closes a
+  // test's pages at its end by default (auto_closing_level=TEST), so the
+  // second test ran without a page ("Could not find active page").
+  function browserImport(groupCount) {
+    return "Library" + SEP + "Browser" + (groupCount > 1 ? SEP + "auto_closing_level=SUITE" : "");
+  }
+
   // Full runnable .robot suite. `test` markers split it into several test
   // cases; the browser bootstrap runs only in the first one.
   function buildSuite(opts) {
     opts = opts || {};
+    var groups = splitScenarios(opts.steps);
     var lines = [];
     lines.push("*** Settings ***");
-    lines.push("Library" + SEP + "Browser");
+    lines.push(browserImport(groups.length));
     lines.push("");
     lines.push("*** Test Cases ***");
-    var groups = splitScenarios(opts.steps);
     groups.forEach(function (group, gi) {
       lines.push(scenarioName(group, gi, testNameOf(opts)));
       if (gi === 0) {
@@ -695,6 +730,7 @@
     var keywordByShape = Object.create(null); // "<type> <locator>" -> name
     var usedNames = Object.create(null);
     var suiteCalls = [];     // strings, or { marker: name } scenario boundaries
+    var usesStepTimeout = false;
     steps.forEach(function (st) {
       if (st.type === "test") { suiteCalls.push({ marker: String(st.name || "") }); return; }
       var shape = KEYWORD_SHAPES[st.type];
@@ -726,11 +762,17 @@
                             value: shape.arg ? argRef : st.value, key: st.key }, refEscape)[0];
         }
         if (entry.fallback) {
-          // Self-healing body: try the primary locator, fall back to the
-          // recorded CSS path with a WARN so the drift never goes unnoticed.
+          // Self-healing body: WAIT for the primary locator (bounded), fall
+          // back to the recorded CSS path with a WARN so the drift never goes
+          // unnoticed. An immediate Get Element Count read 0 on a page still
+          // rendering and took the fallback (with a false WARN) although the
+          // primary locator was right: the decision has to wait like Click does.
           var fbRef = "${" + entry.fallback.variable + "}";
-          body.push(SEP + "${found}=" + SEP + "Get Element Count" + SEP + locRef);
-          body.push(SEP + "IF" + SEP + "${found} > 0");
+          usesStepTimeout = true;
+          body.push(SEP + "${found}=" + SEP + "Run Keyword And Return Status" + SEP +
+                    "Wait For Elements State" + SEP + locRef + SEP + "attached" + SEP +
+                    "timeout=${RECORDED_STEP_TIMEOUT}");
+          body.push(SEP + "IF" + SEP + "${found}");
           body.push(SEP + SEP + actionLine(locRef));
           body.push(SEP + "ELSE");
           body.push(SEP + SEP + "Log" + SEP +
@@ -746,11 +788,17 @@
     });
 
     // 3. resource text
+    var groups = splitScenarios(suiteCalls);
     var res = [];
     res.push("*** Settings ***");
-    res.push("Library" + SEP + "Browser");
+    res.push(browserImport(groups.length));
     res.push("");
     res.push("*** Variables ***");
+    if (usesStepTimeout) {
+      // how long a self-healing keyword waits for its primary locator before
+      // falling back: the Browser library's default timeout, overridable with -v
+      res.push("${RECORDED_STEP_TIMEOUT}" + SEP + "10s");
+    }
     varOrder.forEach(function (loc) {
       var entry = varByLocator[loc];
       res.push("${" + entry.variable + "}" + SEP + rfEscape(loc));
@@ -772,7 +820,6 @@
     suite.push("Resource" + SEP + resourceName);
     suite.push("");
     suite.push("*** Test Cases ***");
-    var groups = splitScenarios(suiteCalls);
     groups.forEach(function (group, gi) {
       suite.push(scenarioName(group, gi, testNameOf(opts)));
       if (gi === 0) {
@@ -2282,6 +2329,7 @@
     var playTimer = 0;
     var captures = [];
     var steps = [];
+    var fills = stepsCore.createFillTracker();   // typed values awaiting their `change`
     var panel = null, overlay = null, menu = null;
 
     // ---- persistence (survives page reloads within the tab) ----------------
@@ -2522,12 +2570,30 @@
       // Selector written by hand, so nothing useful can be recorded here.
       if (tag === "input" && type === "file") return;
       if ((tag === "input" || tag === "textarea") && "value" in t) {
-        best = bestFor(t);
-        // Sensitive values (password / payment / OTP) never reach the
-        // export/clipboard/sessionStorage in clear text.
-        var value = sensitiveMask(t) || t.value;
-        addStep(stepFields("fill", best, { value: value }));
+        if (fills.alreadyRecorded(t, t.value)) return;   // committed at the Enter/Tab press
+        recordFill(t);
       }
+    }
+    // Records a text field's current value (masked when sensitive) and marks it
+    // committed, so neither the key press nor the late `change` records it twice.
+    function recordFill(t) {
+      var best = bestFor(t);
+      // Sensitive values (password / payment / OTP) never reach the
+      // export/clipboard/sessionStorage in clear text.
+      var value = sensitiveMask(t) || t.value;
+      fills.committed(t, t.value);
+      addStep(stepFields("fill", best, { value: value }));
+    }
+
+    // ---- input: remember which text fields hold a not-yet-committed value ----
+    var TEXT_INPUT_TYPES = /^(|text|search|email|url|tel|number|password|date|time|datetime-local|month|week)$/;
+    function onInput(event) {
+      if (replaying || !recording || inOurUI(event.target)) return;
+      var t = event.target;
+      if (!t || t.nodeType !== 1 || !("value" in t)) return;
+      var tag = t.tagName ? t.tagName.toLowerCase() : "";
+      var type = String((t.getAttribute && t.getAttribute("type")) || t.type || "").toLowerCase();
+      if (tag === "textarea" || (tag === "input" && TEXT_INPUT_TYPES.test(type))) fills.edited(t);
     }
 
     // ---- keydown: Enter/Tab presses, Escape stops --------------------------
@@ -2545,6 +2611,14 @@
       }
       if (!recording || inOurUI(event.target)) return;
       if (event.key === "Enter" || event.key === "Tab") {
+        // A typed value still waiting for its `change` is committed FIRST: a
+        // page that handles Enter itself (keydown + preventDefault) never fires
+        // `change` before the blur, so the fill would land after the key.
+        var target = event.target;
+        if (fills.isPending(target) && (!target.tagName || target.tagName.toLowerCase() !== "textarea" ||
+                                        event.key === "Tab")) {
+          recordFill(target);
+        }
         // Deferred one tick ON PURPOSE: a field's `change` fires on blur, i.e.
         // AFTER this keydown (Tab moves focus away, Enter submits). Recording
         // the key immediately put it BEFORE the fill it actually followed:
@@ -2938,6 +3012,7 @@
       doc.addEventListener("mousedown", onMouseDown, true);
       doc.addEventListener("click", onClick, true);
       doc.addEventListener("change", onChange, true);
+      doc.addEventListener("input", onInput, true);
       doc.addEventListener("keydown", onKey, true);
       doc.addEventListener("contextmenu", onContextMenu, true);
       global.addEventListener("hashchange", onNav, true);
@@ -2958,6 +3033,7 @@
       doc.removeEventListener("mousedown", onMouseDown, true);
       doc.removeEventListener("click", onClick, true);
       doc.removeEventListener("change", onChange, true);
+      doc.removeEventListener("input", onInput, true);
       doc.removeEventListener("keydown", onKey, true);
       doc.removeEventListener("contextmenu", onContextMenu, true);
       global.removeEventListener("hashchange", onNav, true);

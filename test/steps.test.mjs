@@ -179,3 +179,16 @@ test("sensitiveMask: ordinary fields are not masked", () => {
   assert.equal(sensitiveMask(field({ inputmode: "numeric", name: "quantity" })), null);
   assert.equal(sensitiveMask(null), null);
 });
+
+test("fill tracker: a typed value is committed once, at the key press or at the change", () => {
+  const fills = stepsCore.createFillTracker();
+  const field = {};                                   // any object stands for a DOM element
+  assert.equal(fills.isPending(field), false);
+  fills.edited(field);                                // typed into
+  assert.equal(fills.isPending(field), true, "Enter must record the pending value first");
+  fills.committed(field, "Aussie");                   // recorded at the Enter press
+  assert.equal(fills.isPending(field), false);
+  assert.equal(fills.alreadyRecorded(field, "Aussie"), true, "the late change must not record it again");
+  assert.equal(fills.alreadyRecorded(field, "Aussie2"), false, "a new value is still recorded");
+  assert.equal(fills.alreadyRecorded({}, "Aussie"), false, "another field is unaffected");
+});

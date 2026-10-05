@@ -5,6 +5,9 @@ Default to concise responses: lead with the conclusion, dense bullet points, no 
 This repo is **rf-web-recorder** (universal web test recorder emitting Robot
 Framework code for the Browser library: see `README.md` and `AGENTS.md`).
 Respond to the user in French; keep READMEs bilingual (EN + `*.fr.md`).
+Sibling of SAPFX, fixes travel both ways (0.6.1, 2026-10-04: Enter after its typed
+value, `auto_closing_level=SUITE` for multi-scenario exports, a fallback that
+waits for its primary locator).
 
 Never use the em dash (« — ») anywhere in this repo (docs, READMEs, specs,
 docstrings, comments, emitted strings, workflows, config): use a colon, a

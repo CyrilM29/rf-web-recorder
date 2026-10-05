@@ -47,6 +47,7 @@
     var playTimer = 0;
     var captures = [];
     var steps = [];
+    var fills = stepsCore.createFillTracker();   // typed values awaiting their `change`
     var panel = null, overlay = null, menu = null;
 
     // ---- persistence (survives page reloads within the tab) ----------------
@@ -287,12 +288,30 @@
       // Selector written by hand, so nothing useful can be recorded here.
       if (tag === "input" && type === "file") return;
       if ((tag === "input" || tag === "textarea") && "value" in t) {
-        best = bestFor(t);
-        // Sensitive values (password / payment / OTP) never reach the
-        // export/clipboard/sessionStorage in clear text.
-        var value = sensitiveMask(t) || t.value;
-        addStep(stepFields("fill", best, { value: value }));
+        if (fills.alreadyRecorded(t, t.value)) return;   // committed at the Enter/Tab press
+        recordFill(t);
       }
+    }
+    // Records a text field's current value (masked when sensitive) and marks it
+    // committed, so neither the key press nor the late `change` records it twice.
+    function recordFill(t) {
+      var best = bestFor(t);
+      // Sensitive values (password / payment / OTP) never reach the
+      // export/clipboard/sessionStorage in clear text.
+      var value = sensitiveMask(t) || t.value;
+      fills.committed(t, t.value);
+      addStep(stepFields("fill", best, { value: value }));
+    }
+
+    // ---- input: remember which text fields hold a not-yet-committed value ----
+    var TEXT_INPUT_TYPES = /^(|text|search|email|url|tel|number|password|date|time|datetime-local|month|week)$/;
+    function onInput(event) {
+      if (replaying || !recording || inOurUI(event.target)) return;
+      var t = event.target;
+      if (!t || t.nodeType !== 1 || !("value" in t)) return;
+      var tag = t.tagName ? t.tagName.toLowerCase() : "";
+      var type = String((t.getAttribute && t.getAttribute("type")) || t.type || "").toLowerCase();
+      if (tag === "textarea" || (tag === "input" && TEXT_INPUT_TYPES.test(type))) fills.edited(t);
     }
 
     // ---- keydown: Enter/Tab presses, Escape stops --------------------------
@@ -310,6 +329,14 @@
       }
       if (!recording || inOurUI(event.target)) return;
       if (event.key === "Enter" || event.key === "Tab") {
+        // A typed value still waiting for its `change` is committed FIRST: a
+        // page that handles Enter itself (keydown + preventDefault) never fires
+        // `change` before the blur, so the fill would land after the key.
+        var target = event.target;
+        if (fills.isPending(target) && (!target.tagName || target.tagName.toLowerCase() !== "textarea" ||
+                                        event.key === "Tab")) {
+          recordFill(target);
+        }
         // Deferred one tick ON PURPOSE: a field's `change` fires on blur, i.e.
         // AFTER this keydown (Tab moves focus away, Enter submits). Recording
         // the key immediately put it BEFORE the fill it actually followed:
@@ -703,6 +730,7 @@
       doc.addEventListener("mousedown", onMouseDown, true);
       doc.addEventListener("click", onClick, true);
       doc.addEventListener("change", onChange, true);
+      doc.addEventListener("input", onInput, true);
       doc.addEventListener("keydown", onKey, true);
       doc.addEventListener("contextmenu", onContextMenu, true);
       global.addEventListener("hashchange", onNav, true);
@@ -723,6 +751,7 @@
       doc.removeEventListener("mousedown", onMouseDown, true);
       doc.removeEventListener("click", onClick, true);
       doc.removeEventListener("change", onChange, true);
+      doc.removeEventListener("input", onInput, true);
       doc.removeEventListener("keydown", onKey, true);
       doc.removeEventListener("contextmenu", onContextMenu, true);
       global.removeEventListener("hashchange", onNav, true);

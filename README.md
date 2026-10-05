@@ -119,7 +119,7 @@ become ordered steps:
 | select an option | `Select Options By    <locator>    label    <label>` |
 | check / uncheck a checkbox | `Check Checkbox` / `Uncheck Checkbox` |
 | click a radio button | `Click    <locator>` |
-| press Enter / Tab | `Keyboard Key    press    Enter` |
+| press Enter / Tab | `Keyboard Key    press    Enter` (a value still being typed is recorded first: a page that handles Enter itself fires no `change` before the blur) |
 | hash / history navigation | `Wait For Load State    load` |
 
 Compaction is automatic: near-simultaneous duplicate steps dedup (a deliberate
@@ -156,7 +156,9 @@ in the inline prompt and keep recording: a scenario marker row
 multiple `*** Test Cases ***` entries: the first test carries the editable
 test name and the `New Browser`/`New Page` bootstrap, each marker names the
 next test, and later tests **continue the same browser session** (no
-re-bootstrap). Replay treats markers as separators.
+re-bootstrap: the Settings then import `Library    Browser    auto_closing_level=SUITE`,
+since the Browser library otherwise closes a test's pages at its end). Replay
+treats markers as separators.
 
 **Assertion menu**: while recording, **right-click** any element:
 
@@ -198,8 +200,8 @@ the first):
 
    ```robotframework
    Click Username
-       ${found}=    Get Element Count    ${LOC_1_USERNAME}
-       IF    ${found} > 0
+       ${found}=    Run Keyword And Return Status    Wait For Elements State    ${LOC_1_USERNAME}    attached    timeout=${RECORDED_STEP_TIMEOUT}
+       IF    ${found}
            Click    ${LOC_1_USERNAME}
        ELSE
            Log    Primary locator not found - falling back to the recorded CSS path    WARN
@@ -207,8 +209,11 @@ the first):
        END
    ```
 
-   The primary locator is tried first; the CSS path only steps in when it no
-   longer matches, and the WARN makes the drift visible in the log instead of
+   The primary locator is waited for first (`${RECORDED_STEP_TIMEOUT}`, 10 s,
+   the Browser library's default, overridable with `-v`): an immediate count
+   read 0 on a page still rendering and took the fallback with a false WARN.
+   The CSS path only steps in when the primary still does not match after
+   that wait, and the WARN makes the drift visible in the log instead of
    hiding it. Value-carrying keywords keep their `[Arguments]` and use the
    argument in both branches. (The SeleniumLibrary emitter is deliberately
    unchanged: it already consumes the CSS fallback directly for `role=`/`text=`

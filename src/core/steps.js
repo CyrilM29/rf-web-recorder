@@ -110,6 +110,33 @@
     return SENSITIVE_HINT.test(hint) ? "<SECRET>" : null;
   }
 
+  // ---- typed values still waiting for their `change` event ----------------
+  // A field whose page handles Enter itself (keydown + preventDefault: search
+  // boxes, chat inputs, most SPA forms) never fires a native `change` before
+  // the blur. Recording only on `change` then put the Enter BEFORE the fill it
+  // followed, and the replay pressed Enter on an empty field. The tracker lets
+  // the recorder commit a typed value at the key press instead, and skip the
+  // late `change` that would record it a second time. Keys are DOM elements;
+  // a WeakMap keeps nothing alive after the page drops them.
+  function createFillTracker() {
+    var Store = typeof WeakMap === "function" ? WeakMap : Map;
+    var dirty = new Store();      // element -> true once typed into, until committed
+    var recorded = new Store();   // element -> last value already recorded
+    return {
+      edited: function (el) { if (el) dirty.set(el, true); },
+      isPending: function (el) { return !!el && dirty.has(el); },
+      committed: function (el, value) {
+        if (!el) return;
+        dirty.delete(el);
+        recorded.set(el, value);
+      },
+      // true when `change` reports a value the key press already recorded
+      alreadyRecorded: function (el, value) {
+        return !!el && recorded.has(el) && recorded.get(el) === value;
+      },
+    };
+  }
+
   return { addStep: addStep, compact: compact, isSame: isSame, stepKey: stepKey,
-           sensitiveMask: sensitiveMask };
+           sensitiveMask: sensitiveMask, createFillTracker: createFillTracker };
 });
