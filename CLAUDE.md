@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+Default to concise responses: lead with the conclusion, dense bullet points, no preamble or filler, except for critical security, ambiguity needing clarification, or learning contexts.
+
 Guidance for AI assistants working in this repo. Keep it accurate: update it
 when structure or conventions change, and keep `AGENTS.md` and
 `.github/copilot-instructions.md` (condensed mirrors) in sync in the same
@@ -81,6 +83,19 @@ npm run package       # store zip for the extension
 4. Every behaviour change gets a `node --test` unit test; keep the e2e robot
    smoke green.
 5. License Apache-2.0: preserve `NOTICE` (SAPFX dom-engine attribution).
+
+## Observe, do not fix
+
+When a test run fails (red test, accessibility violation, baseline or snapshot
+drift, regression): report the finding (file, screen or page, rule, impact,
+useful output) and stop there. Do not fix the application under test, and do
+not fix the test itself either, without an explicit request.
+
+- No convenience baseline update, no `--update-snapshots` to turn a suite green.
+- Healer agents run only on request.
+- When unsure whether to observe or fix: observe, then ask.
+- Exception: a fix that was explicitly asked for, or the development work in
+  progress on this repo, is delivered in full, as usual.
 
 ## Memory (three coexisting layers)
 

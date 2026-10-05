@@ -1,5 +1,7 @@
 # GitHub Copilot instructions
 
+Default to concise responses: lead with the conclusion, dense bullet points, no preamble or filler, except for critical security, ambiguity needing clarification, or learning contexts.
+
 This repo is **rf-web-recorder** (universal web test recorder emitting Robot
 Framework code for the Browser library: see `README.md` and `AGENTS.md`).
 Respond to the user in French; keep READMEs bilingual (EN + `*.fr.md`).
@@ -8,6 +10,19 @@ Never use the em dash (« — ») anywhere in this repo (docs, READMEs, specs,
 docstrings, comments, emitted strings, workflows, config): use a colon, a
 comma, parentheses, or split the sentence (French puts a space before the
 colon, English does not). Enforced by `tools/check-no-em-dash.mjs`, run by `npm test`.
+
+## Observe, do not fix
+
+When a test run fails (red test, accessibility violation, baseline or snapshot
+drift, regression): report the finding (file, screen or page, rule, impact,
+useful output) and stop there. Do not fix the application under test, and do
+not fix the test itself either, without an explicit request.
+
+- No convenience baseline update, no `--update-snapshots` to turn a suite green.
+- Healer agents run only on request.
+- When unsure whether to observe or fix: observe, then ask.
+- Exception: a fix that was explicitly asked for, or the development work in
+  progress on this repo, is delivered in full, as usual.
 
 ## Memory (three coexisting layers)
 
